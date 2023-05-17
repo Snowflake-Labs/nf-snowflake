@@ -1,12 +1,13 @@
 # nf-hello plugin 
  
-This project shows how to implement a simple Nextflow plugin named `nf-hello` which intercepts workflow execution events to print a message when the execution starts and on workflow completion.
+This project contains a simple Nextflow plugin called `nf-hello` which provides examples of different plugin extensions:
 
-The `nf-hello` plugin also enriches the `channel` object with a `producer` and `consumer` method (`reverse` and `goodbye`) which can be used in a pipeline script.
+- A custom trace observer that prints a message when the workflow starts and when the workflow completes
+- A custom channel factory called `reverse`
+- A custom operator called `goodbye`
+- A custom function called `randomString`
 
-Also exposes some @FunctionS to be used in the pipeline as custom methods 
-
-   NOTE: this repo uses the name `nf-hello` as root name. In case you want to use this repo as starting point for a custom plugin, you need at least to change `settings.gradle` and rename `plugins/nf-hello` folder.
+NOTE: If you want to use this project as a starting point for a custom plugin, you must rename the `plugins/nf-hello` folder and update `settings.gradle` with your plugin name.
 
 ## Plugin structure
                     
@@ -40,18 +41,17 @@ Also exposes some @FunctionS to be used in the pipeline as custom methods
 
 ## Plugin classes
 
-- `HelloConfig`: simple example how to handle configuration options provided via the Nextflow configuration file. 
+- `HelloConfig`: shows how to handle options from the Nextflow configuration
 
-- `HelloExtension`: show how create an extension class that can be used to create custom channel factories, operation and fuctions that can be imported in the pipeline script as DSL extensions.
+- `HelloExtension`: shows how to create custom channel factories, operators, and fuctions that can be included into pipeline scripts
 
-- `HelloFactory` and `HelloObserver`: show how to intercept workflow runtime events and react correspondly with custom code.
+- `HelloFactory` and `HelloObserver`: shows how to react to workflow events with custom behavior
 
-- `HelloPlugin`: the plugin entry point.
-
+- `HelloPlugin`: the plugin entry point
 
 ## Unit testing 
 
-Run the following command in the project root directory (ie. where the file `settings.gradle` is located):
+To run your unit tests, run the following command in the project root directory (ie. where the file `settings.gradle` is located):
 
 ```bash
 ./gradlew check
@@ -59,7 +59,7 @@ Run the following command in the project root directory (ie. where the file `set
 
 ## Testing and debugging
 
-To run and test the plugin in for development purpose, configure a local Nextflow build with the following steps:
+To build and test the plugin during development, configure a local Nextflow build with the following steps:
 
 1. Clone the Nextflow repository in your computer into a sibling directory:
     ```bash
@@ -85,15 +85,15 @@ To run and test the plugin in for development purpose, configure a local Nextflo
 
 ## Testing without Nextflow build
 
-The plugin can be tested without using a local Nextflow build using those steps:
+The plugin can be tested without using a local Nextflow build using the following steps:
 
-1. generate required artifacts with `make buildPlugins`
-2. copy build/plugins/your-plugin to `$HOME/.nextflow/plugins`
-3. create a pipeline with your plugin and see in action via `nextflow run ./my-pipeline-script.nf`
+1. Build the plugin: `make buildPlugins`
+2. Copy `build/plugins/<your-plugin>` to `$HOME/.nextflow/plugins`
+3. Create a pipeline that uses your plugin and run it: `nextflow run ./my-pipeline-script.nf`
 
-## Package, upload and publish
+## Package, upload, and publish
 
-The project should be hosted in a GitHub repository whose name should match the name of the plugin, that is the name of the directory in the `plugins` folder (e.g. `nf-hello`).
+The project should be hosted in a GitHub repository whose name matches the name of the plugin, that is the name of the directory in the `plugins` folder (e.g. `nf-hello`).
 
 Follow these steps to package, upload and publish the plugin:
 
