@@ -8,6 +8,10 @@ mm =
 endif 
 
 clean:
+	rm -rf .nextflow*
+	rm -rf work
+	rm -rf build
+	rm -rf plugins/*/build
 	./gradlew clean
 
 compile:
@@ -43,6 +47,9 @@ ifndef class
 else
 	./gradlew ${mm}test --tests ${class}
 endif
+
+assemble:
+	./gradlew assemble
 
 #
 # generate build zips under build/plugins

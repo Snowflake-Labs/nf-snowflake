@@ -1,5 +1,8 @@
 package nextflow.hello
 
+import java.nio.file.Files
+import java.util.jar.Manifest
+
 import nextflow.Channel
 import nextflow.plugin.Plugins
 import nextflow.plugin.TestPluginDescriptorFinder
@@ -35,9 +38,18 @@ class HelloDslTest extends Dsl2Spec{
             @Override
             protected PluginDescriptorFinder createPluginDescriptorFinder() {
                 return new TestPluginDescriptorFinder(){
+
                     @Override
-                    protected Path getManifestPath(Path pluginPath) {
-                        return pluginPath.resolve('build/resources/main/META-INF/MANIFEST.MF')
+                    protected Manifest readManifestFromDirectory(Path pluginPath) {
+                        if( !Files.isDirectory(pluginPath) )
+                            return null
+
+                        final manifestPath = pluginPath.resolve('build/resources/main/META-INF/MANIFEST.MF')
+                        if( !Files.exists(manifestPath) )
+                            return null
+
+                        final input = Files.newInputStream(manifestPath)
+                        return new Manifest(input)
                     }
                 }
             }
