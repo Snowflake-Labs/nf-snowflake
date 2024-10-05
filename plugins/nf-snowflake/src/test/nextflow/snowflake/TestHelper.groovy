@@ -1,5 +1,6 @@
 /*
- * Copyright 2021, Seqera Labs
+ * Copyright 2020-2022, Seqera Labs
+ * Copyright 2013-2019, Centre for Genomic Regulation (CRG)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,29 +15,29 @@
  * limitations under the License.
  */
 
-package nextflow.hello
+package nextflow.snowflake
 
-import groovy.transform.CompileStatic
-import groovy.util.logging.Slf4j
-import nextflow.Session
-import nextflow.trace.TraceObserver
+import com.google.common.jimfs.Configuration
+import com.google.common.jimfs.Jimfs
+
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
- * Example workflow events observer
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
-@Slf4j
-@CompileStatic
-class HelloObserver implements TraceObserver {
+class TestHelper {
 
-    @Override
-    void onFlowCreate(Session session) {
-        log.info "Pipeline is starting! 🚀"
+    static private fs = Jimfs.newFileSystem(Configuration.unix());
+
+    static Path createInMemTempFile(String name='temp.file', String content=null) {
+        Path tmp = fs.getPath("/tmp");
+        tmp.mkdir()
+        def result = Files.createTempDirectory(tmp, 'test').resolve(name)
+        if( content )
+            result.text = content
+        return result
     }
 
-    @Override
-    void onFlowComplete() {
-        log.info "Pipeline complete! 👋"
-    }
 }
