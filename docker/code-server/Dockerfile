@@ -9,5 +9,7 @@ ENV JAVA_HOME=/usr/lib/jvm/jdk-17
 ENV PATH="$JAVA_HOME/bin:$PATH"
 
 RUN curl -s https://get.nextflow.io | bash && chmod 0755 nextflow && mv nextflow /usr/bin
+RUN /app/code-server/bin/code-server --install-extension nextflow.nextflow --extensions-dir /config/extensions
+
 RUN mkdir -p /config/.nextflow/plugins
-COPY build/plugins/nf-snowflake-0.5.0/ /config/.nextflow/plugins/nf-snowflake-0.5.0/
+COPY build/plugins/ /config/.nextflow/plugins/
