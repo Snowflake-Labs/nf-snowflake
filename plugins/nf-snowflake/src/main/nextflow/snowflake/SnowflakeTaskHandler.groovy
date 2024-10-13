@@ -19,6 +19,7 @@ import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
 
 import java.sql.ResultSet
+import java.sql.SQLException
 import java.sql.Statement
 
 import net.snowflake.client.jdbc.SnowflakeStatement
@@ -29,11 +30,14 @@ class SnowflakeTaskHandler extends TaskHandler {
     private Statement statement
     private ResultSet resultSet
     private SnowflakeExecutor executor
+    private String jobServiceName
+    private static final String containerName = 'main'
 
     SnowflakeTaskHandler(TaskRun taskRun, Statement statement, SnowflakeExecutor executor) {
         super(taskRun)
         this.statement = statement
         this.executor = executor
+        this.jobServiceName = normalizeTaskName(executor.session.runName, task.getName())
         validateConfiguration()
     }
 
@@ -57,16 +61,28 @@ class SnowflakeTaskHandler extends TaskHandler {
         if (queryStatus.isSuccess()) {
             // execute job did not expose error code. Just use exit code 1 for all failure case
             task.exitStatus = 0
-            task.stdout = ""
+            task.stdout = tryGetStdout()
             this.status = TaskStatus.COMPLETED
             return true
         } else if (queryStatus.isAnError()) {
             task.exitStatus = 1
-            task.stdout = ""
+            task.stdout = tryGetStdout()
             task.stderr = queryStatus.errorMessage
             return true
         } else {
             return false
+        }
+    }
+
+    private String tryGetStdout() {
+        try {
+            final Statement pollStmt = statement.getConnection().createStatement()
+            final ResultSet resultSet = pollStmt.executeQuery(
+                    String.format("select system\$GET_SERVICE_LOGS('%s', '0', '%s')", jobServiceName, containerName))
+            boolean hasNext = resultSet.next()
+            return hasNext ? resultSet.getString(1) : ""
+        } catch (SQLException e) {
+            return "Failed to read stdout: " + e.toString()
         }
     }
 
@@ -82,9 +98,9 @@ class SnowflakeTaskHandler extends TaskHandler {
         builder.build()
 
         final String spec = buildJobServiceSpec()
-        final String jobServiceName = normalizeTaskName(executor.session.runName, task.getName())
+
         final String defaultComputePool = executor.snowflakeConfig.get("computePool")
-        final String eai = executor.snowflakeConfig.get("externalAccessIntegrations")
+        final String eai = executor.snowflakeConfig.getOrDefault("externalAccessIntegrations", "")
 
         String executeSql = String.format("""
 execute job service
@@ -95,8 +111,7 @@ from specification
 \$\$
 %s
 \$\$
-""", defaultComputePool, jobServiceName, eai == null ? "" : eai, spec)
-        System.out.println(executeSql)
+""", defaultComputePool, jobServiceName, eai, spec)
 
         resultSet = statement.unwrap(SnowflakeStatement.class).executeAsyncQuery(executeSql)
         this.status = TaskStatus.SUBMITTED
@@ -112,7 +127,7 @@ from specification
 
     private String buildJobServiceSpec() {
         Container container = new Container()
-        container.name = 'main'
+        container.name = containerName
         container.image = task.container
         container.command = classicSubmitCli(task)
 
