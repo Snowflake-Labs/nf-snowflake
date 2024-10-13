@@ -112,7 +112,6 @@ from specification
 %s
 \$\$
 """, defaultComputePool, jobServiceName, eai, spec)
-        System.out.println(executeSql)
 
         resultSet = statement.unwrap(SnowflakeStatement.class).executeAsyncQuery(executeSql)
         this.status = TaskStatus.SUBMITTED
