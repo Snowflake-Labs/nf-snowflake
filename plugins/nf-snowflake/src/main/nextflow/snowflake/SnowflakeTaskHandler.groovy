@@ -84,16 +84,19 @@ class SnowflakeTaskHandler extends TaskHandler {
         final String spec = buildJobServiceSpec()
         final String jobServiceName = normalizeTaskName(executor.session.runName, task.getName())
         final String defaultComputePool = executor.snowflakeConfig.get("computePool")
+        final String eai = executor.snowflakeConfig.get("externalAccessIntegrations")
 
-        final String executeSql = String.format("""
+        String executeSql = String.format("""
 execute job service
 in compute pool %s
 name = %s
+external_access_integrations=(%s)
 from specification
 \$\$
 %s
 \$\$
-""", defaultComputePool, jobServiceName, spec)
+""", defaultComputePool, jobServiceName, eai == null ? "" : eai, spec)
+        System.out.println(executeSql)
 
         resultSet = statement.unwrap(SnowflakeStatement.class).executeAsyncQuery(executeSql)
         this.status = TaskStatus.SUBMITTED
@@ -112,7 +115,6 @@ from specification
         container.name = 'main'
         container.image = task.container
         container.command = classicSubmitCli(task)
-
 
         final String mounts = executor.snowflakeConfig.get("stageMounts")
         StageMountsParseResult result = parseStageMounts(mounts)
