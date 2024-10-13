@@ -54,14 +54,20 @@ class SnowflakeTaskHandler extends TaskHandler {
             return false
 
         QueryStatusV2 queryStatus = resultSet.unwrap(SnowflakeResultSet).getStatusV2()
-        boolean done = queryStatus.isSuccess() || queryStatus.isAnError()
-        if (done) {
+        if (queryStatus.isSuccess()) {
             // execute job did not expose error code. Just use exit code 1 for all failure case
-            task.exitStatus = queryStatus.isSuccess() ? 0 : 1
+            task.exitStatus = 0
             task.stdout = ""
             this.status = TaskStatus.COMPLETED
+            return true
+        } else if (queryStatus.isAnError()) {
+            task.exitStatus = 1
+            task.stdout = ""
+            task.stderr = queryStatus.errorMessage
+            return true
+        } else {
+            return false
         }
-        return done
     }
 
     @Override
@@ -106,15 +112,21 @@ from specification
         container.name = 'main'
         container.image = task.container
         container.command = classicSubmitCli(task)
-        container.volumeMounts = new ArrayList<>(Arrays.asList(
-                new VolumeMount("nxf-runtime", executor.session.workDir.toString())
-        ))
+
+
+        final String mounts = executor.snowflakeConfig.get("stageMounts")
+        StageMountsParseResult result = parseStageMounts(mounts)
+
+        if (!result.volumeMounts.empty){
+            container.volumeMounts = result.volumeMounts
+        }
 
         Spec spec = new Spec()
         spec.containers = Collections.singletonList(container)
-        spec.volumes = new ArrayList<>(Arrays.asList(
-                new Volume("nxf-runtime", String.format("@%s", executor.runtimeStageName))
-        ))
+
+        if (!result.volumes.empty){
+            spec.volumes = result.volumes
+        }
 
         SnowflakeJobServiceSpec root = new SnowflakeJobServiceSpec()
         root.spec = spec
@@ -123,6 +135,47 @@ from specification
         dumperOptions.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK)
         Yaml yaml = new Yaml(dumperOptions)
         return yaml.dump(root)
+    }
+
+    private static class StageMountsParseResult {
+        final List<VolumeMount> volumeMounts;
+        final List<Volume> volumes;
+
+        StageMountsParseResult(){
+            volumeMounts = Collections.emptyList()
+            volumes = Collections.emptyList()
+        }
+
+        StageMountsParseResult(List<VolumeMount> volumeMounts, List<Volume> volumes){
+            this.volumes = volumes
+            this.volumeMounts = volumeMounts
+        }
+    }
+    
+    private static StageMountsParseResult parseStageMounts(String input){
+        if (input == null) {
+            return new StageMountsParseResult()
+        }
+
+        final List<Volume> volumes = new ArrayList<>()
+        final List<VolumeMount> volumeMounts = new ArrayList<>()
+        String[] mounts = input.split(",")
+        for (int i=0; i<mounts.length; i++) {
+            String[] mountParts = mounts[i].split(":")
+            if (mountParts.length != 2) {
+                continue
+            }
+
+            if (!mountParts[0].startsWith('@')){
+                continue
+            }
+
+            final String volumeName = "volume" + i
+            volumeMounts.add(new VolumeMount(volumeName, mountParts[1]))
+            volumes.add(new Volume(volumeName, mountParts[0]))
+        }
+
+        return new StageMountsParseResult(volumeMounts, volumes)
     }
 
     private static String normalizeTaskName(String sessionRunName, String taskName) {
@@ -135,5 +188,4 @@ from specification
         result.add("${Escape.path(task.workDir)}/${TaskRun.CMD_RUN}".toString())
         return result
     }
-
 }

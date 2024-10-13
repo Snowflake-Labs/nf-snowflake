@@ -51,9 +51,6 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
     protected void register() {
         super.register()
         snowflakeConfig = session.config.navigate("snowflake") as Map
-        runtimeStageName = snowflakeConfig.get("runtimeStage")
-        //runtimeStageName = String.format("nxf_%s_runtime", session.runName).toUpperCase()
-        //runtimeStageName = String.format("nxf_runtime", session.runName).toUpperCase()
         initSFConnection()
     }
 
