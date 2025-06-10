@@ -132,7 +132,11 @@ from specification
         container.command = classicSubmitCli(task)
 
         final String mounts = executor.snowflakeConfig.get("stageMounts")
-        StageMountsParseResult result = parseStageMounts(mounts)
+        StageMounts result = parseStageMounts(mounts)
+
+        final String workDir = executor.getWorkDir().toUriString()
+        final String workDirStage = executor.snowflakeConfig.get("workDirStage")
+        result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName))
 
         if (!result.volumeMounts.empty){
             container.volumeMounts = result.volumeMounts
@@ -154,24 +158,30 @@ from specification
         return yaml.dump(root)
     }
 
-    private static class StageMountsParseResult {
+    private static class StageMounts {
         final List<VolumeMount> volumeMounts;
         final List<Volume> volumes;
 
-        StageMountsParseResult(){
+        StageMounts(){
             volumeMounts = Collections.emptyList()
             volumes = Collections.emptyList()
         }
 
-        StageMountsParseResult(List<VolumeMount> volumeMounts, List<Volume> volumes){
+        StageMounts(List<VolumeMount> volumeMounts, List<Volume> volumes){
             this.volumes = volumes
             this.volumeMounts = volumeMounts
         }
+
+        void addWorkDirMount(String workDir, String workDirStage) {
+            final String volumeName = "volume" + volumeMounts.size()
+            volumeMounts.add(new VolumeMount(volumeName, workDir))
+            volumes.add(new Volume(volumeName, workDirStage))
+        }
     }
     
-    private static StageMountsParseResult parseStageMounts(String input){
+    private static StageMounts parseStageMounts(String input){
         if (input == null) {
-            return new StageMountsParseResult()
+            return new StageMounts()
         }
 
         final List<Volume> volumes = new ArrayList<>()
@@ -192,7 +202,7 @@ from specification
             volumes.add(new Volume(volumeName, mountParts[0]))
         }
 
-        return new StageMountsParseResult(volumeMounts, volumes)
+        return new StageMounts(volumeMounts, volumes)
     }
 
     private static String normalizeTaskName(String sessionRunName, String taskName) {
