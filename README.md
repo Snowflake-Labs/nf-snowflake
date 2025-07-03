@@ -54,8 +54,9 @@ plugins {
     process.executor = 'snowflake'
     snowflake {
       computePool = 'CP'
-      stageMounts = '@nxf_runtime:/config/runtime,@results_st:/config/results'
+      stageMounts = 'INPUT:/mnt/input,OUTPUT:/mnt/output'
       externalAccessIntegrations='EAI'
+      workDirStage = 'WORKDIR_STAGE'
     }
   }
 ...
@@ -86,17 +87,21 @@ spec:
     - -profile
     - snowflake
     - -work-dir
-    - /config/runtime
+    - /mnt/workdir
     volumeMounts:
-    - name: runtime
-      mountPath: /config/runtime
-    - name: results
-      mountPath: /config/results
+    - name: input
+      mountPath: /mnt/input
+    - name: output
+      mountPath: /mnt/output
+    - name: workDir
+      mountPath: /mnt/workdir
   volumes:
-  - name: runtime
-    source: "@nxf_runtime"
-  - name: results
-    source: "@results_st"
+  - name: input
+    source: "@input"
+  - name: output
+    source: "@output"
+  - name: workDir
+    source: "@workdir"
 '
 ;
 ```
