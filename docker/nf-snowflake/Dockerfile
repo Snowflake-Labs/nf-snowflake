@@ -11,5 +11,12 @@ COPY build/plugins/nf-snowflake-${PLUGIN_VERSION}/ /.nextflow/plugins/nf-snowfla
 
 RUN yum install -y git tar
 
+RUN curl -O https://bootstrap.pypa.io/get-pip.py && \
+    python3 get-pip.py && \
+    rm get-pip.py && \
+    pip install websockets
+
+COPY docker/nf-snowflake/pty_server.py /app/pty_server.py
+
 # Set working directory
 WORKDIR /workspace

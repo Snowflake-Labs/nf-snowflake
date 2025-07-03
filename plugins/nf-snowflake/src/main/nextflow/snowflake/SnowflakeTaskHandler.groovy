@@ -175,7 +175,7 @@ from specification
         void addWorkDirMount(String workDir, String workDirStage) {
             final String volumeName = "volume" + volumeMounts.size()
             volumeMounts.add(new VolumeMount(volumeName, workDir))
-            volumes.add(new Volume(volumeName, workDirStage))
+            volumes.add(new Volume(volumeName, "@"+workDirStage))
         }
     }
     
@@ -193,13 +193,9 @@ from specification
                 continue
             }
 
-            if (!mountParts[0].startsWith('@')){
-                continue
-            }
-
             final String volumeName = "volume" + i
             volumeMounts.add(new VolumeMount(volumeName, mountParts[1]))
-            volumes.add(new Volume(volumeName, mountParts[0]))
+            volumes.add(new Volume(volumeName, "@"+mountParts[0]))
         }
 
         return new StageMounts(volumeMounts, volumes)
