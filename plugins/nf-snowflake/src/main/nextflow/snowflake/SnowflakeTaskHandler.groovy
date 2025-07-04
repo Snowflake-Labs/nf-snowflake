@@ -8,8 +8,11 @@ import nextflow.exception.ProcessUnrecoverableException
 import nextflow.executor.BashWrapperBuilder
 import nextflow.processor.TaskHandler
 import nextflow.processor.TaskRun
+import nextflow.processor.TaskConfig
 import nextflow.processor.TaskStatus
 import nextflow.snowflake.spec.Container
+import nextflow.snowflake.spec.ResourceItems
+import nextflow.snowflake.spec.Resources
 import nextflow.snowflake.spec.SnowflakeJobServiceSpec
 import nextflow.snowflake.spec.Spec
 import nextflow.snowflake.spec.Volume
@@ -126,10 +129,21 @@ from specification
     }
 
     private String buildJobServiceSpec() {
+        TaskConfig taskCfg = this.task.getConfig()
         Container container = new Container()
         container.name = containerName
         container.image = task.container
         container.command = classicSubmitCli(task)
+
+        final cpu = taskCfg.getCpus()
+        final memory = taskCfg.getMemory()
+
+        if (cpu || memory) {
+            container.resources = new Resources()
+            container.resources.requests = new ResourceItems()
+            container.resources.requests.cpu = cpu ? cpu : null
+            container.resources.requests.memory = memory ? memory.toMega() + "Mi" : null
+        }
 
         final String mounts = executor.snowflakeConfig.get("stageMounts")
         StageMounts result = parseStageMounts(mounts)

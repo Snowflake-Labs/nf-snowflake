@@ -8,4 +8,6 @@ class Container {
     List<String> command
 
     List<VolumeMount> volumeMounts
+
+    Resources resources
 }
