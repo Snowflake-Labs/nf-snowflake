@@ -20,6 +20,10 @@ import nextflow.snowflake.spec.VolumeMount
 import nextflow.util.Escape
 import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
+import org.yaml.snakeyaml.representer.Representer
+import org.yaml.snakeyaml.introspector.BeanAccess
+import org.yaml.snakeyaml.introspector.Property
+import org.yaml.snakeyaml.nodes.MappingNode
 
 import java.sql.ResultSet
 import java.sql.SQLException
@@ -35,6 +39,39 @@ class SnowflakeTaskHandler extends TaskHandler {
     private SnowflakeExecutor executor
     private String jobServiceName
     private static final String containerName = 'main'
+    
+    // Static YAML object for efficient reuse with custom representer
+    private static final Yaml yaml = createYamlDumper()
+
+    private static Yaml createYamlDumper() {
+        DumperOptions dumperOptions = new DumperOptions()
+        dumperOptions.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK)
+        
+        // Custom representer that skips any field when it's null
+        Representer representer = new Representer(dumperOptions) {
+            @Override
+            protected MappingNode representJavaBean(Set<Property> properties, Object javaBean) {
+                // Filter out any property when it's null
+                Set<Property> filteredProperties = new LinkedHashSet<>()
+                for (Property property : properties) {
+                    try {
+                        Object value = property.get(javaBean)
+                        // Skip any property that has a null value
+                        if (value == null) {
+                            continue
+                        }
+                        filteredProperties.add(property)
+                    } catch (Exception e) {
+                        // If we can't get the value, include the property
+                        filteredProperties.add(property)
+                    }
+                }
+                return super.representJavaBean(filteredProperties, javaBean)
+            }
+        }
+        
+        return new Yaml(representer, dumperOptions)
+    }
 
     SnowflakeTaskHandler(TaskRun taskRun, Statement statement, SnowflakeExecutor executor) {
         super(taskRun)
@@ -166,9 +203,6 @@ from specification
         SnowflakeJobServiceSpec root = new SnowflakeJobServiceSpec()
         root.spec = spec
 
-        DumperOptions dumperOptions = new DumperOptions()
-        dumperOptions.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK)
-        Yaml yaml = new Yaml(dumperOptions)
         return yaml.dump(root)
     }
 
@@ -177,8 +211,8 @@ from specification
         final List<Volume> volumes;
 
         StageMounts(){
-            volumeMounts = Collections.emptyList()
-            volumes = Collections.emptyList()
+            volumeMounts = new ArrayList<>()
+            volumes = new ArrayList<>()
         }
 
         StageMounts(List<VolumeMount> volumeMounts, List<Volume> volumes){
