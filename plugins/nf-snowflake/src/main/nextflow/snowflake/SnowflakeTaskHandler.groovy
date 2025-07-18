@@ -14,6 +14,7 @@ import nextflow.snowflake.spec.Container
 import nextflow.snowflake.spec.ResourceItems
 import nextflow.snowflake.spec.Resources
 import nextflow.snowflake.spec.SnowflakeJobServiceSpec
+import nextflow.snowflake.spec.StageConfig
 import nextflow.snowflake.spec.Spec
 import nextflow.snowflake.spec.Volume
 import nextflow.snowflake.spec.VolumeMount
@@ -137,7 +138,9 @@ class SnowflakeTaskHandler extends TaskHandler {
         final SnowflakeWrapperBuilder builder = new SnowflakeWrapperBuilder(task)
         builder.build()
 
-        final String spec = buildJobServiceSpec()
+        final String enableV2Str = executor.snowflakeConfig.getOrDefault("enableStageMountV2", "false")
+        final Boolean enableStageMountV2 = Boolean.parseBoolean(enableV2Str)
+        final String spec = buildJobServiceSpec(enableStageMountV2)
 
         final String defaultComputePool = executor.snowflakeConfig.get("computePool")
         final String eai = executor.snowflakeConfig.getOrDefault("externalAccessIntegrations", "")
@@ -165,7 +168,7 @@ from specification
         //TODO validate compute pool is specified
     }
 
-    private String buildJobServiceSpec() {
+    private String buildJobServiceSpec(Boolean enableStageMountV2) {
         TaskConfig taskCfg = this.task.getConfig()
         Container container = new Container()
         container.name = containerName
@@ -183,11 +186,11 @@ from specification
         }
 
         final String mounts = executor.snowflakeConfig.get("stageMounts")
-        StageMounts result = parseStageMounts(mounts)
+        StageMounts result = parseStageMounts(mounts, enableStageMountV2)
 
         final String workDir = executor.getWorkDir().toUriString()
         final String workDirStage = executor.snowflakeConfig.get("workDirStage")
-        result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName))
+        result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName), enableStageMountV2)
 
         if (!result.volumeMounts.empty){
             container.volumeMounts = result.volumeMounts
@@ -220,14 +223,17 @@ from specification
             this.volumeMounts = volumeMounts
         }
 
-        void addWorkDirMount(String workDir, String workDirStage) {
+        void addWorkDirMount(String workDir, String workDirStage, boolean enableStageMountV2) {
             final String volumeName = "volume" + volumeMounts.size()
             volumeMounts.add(new VolumeMount(volumeName, workDir))
-            volumes.add(new Volume(volumeName, "@"+workDirStage))
+            volumes.add(
+                enableStageMountV2 ?
+                new Volume(volumeName, new StageConfig("@"+workDirStage, true))
+                : new Volume(volumeName, "@"+workDirStage))
         }
     }
     
-    private static StageMounts parseStageMounts(String input){
+    private static StageMounts parseStageMounts(String input, boolean enableStageMountV2){
         if (input == null) {
             return new StageMounts()
         }
@@ -243,7 +249,11 @@ from specification
 
             final String volumeName = "volume" + i
             volumeMounts.add(new VolumeMount(volumeName, mountParts[1]))
-            volumes.add(new Volume(volumeName, "@"+mountParts[0]))
+
+            final Volume volume = enableStageMountV2
+             ? new Volume(volumeName, new StageConfig("@"+mountParts[0], true))
+             : new Volume(volumeName, "@"+mountParts[0])
+            volumes.add(volume)
         }
 
         return new StageMounts(volumeMounts, volumes)

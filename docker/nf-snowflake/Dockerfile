@@ -1,7 +1,7 @@
 FROM nextflow/nextflow:24.04.1
 
 # Define version argument with default value
-ARG PLUGIN_VERSION=0.6.0
+ARG PLUGIN_VERSION=0.6.3
 
 # Create plugins directory
 RUN mkdir -p /.nextflow/plugins
