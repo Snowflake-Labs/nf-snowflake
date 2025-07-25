@@ -6,6 +6,7 @@ import net.snowflake.client.jdbc.QueryStatusV2
 import net.snowflake.client.jdbc.SnowflakeResultSet
 import nextflow.exception.ProcessUnrecoverableException
 import nextflow.executor.BashWrapperBuilder
+import nextflow.processor.TaskBean
 import nextflow.processor.TaskHandler
 import nextflow.processor.TaskRun
 import nextflow.processor.TaskConfig
@@ -134,14 +135,23 @@ class SnowflakeTaskHandler extends TaskHandler {
 
     @Override
     void submit(){
-        // create bash wrapper script
-        final SnowflakeWrapperBuilder builder = new SnowflakeWrapperBuilder(task)
-        builder.build()
-
         final String enableV2Str = executor.snowflakeConfig.getOrDefault("enableStageMountV2", "false")
         final Boolean enableStageMountV2 = Boolean.parseBoolean(enableV2Str)
-        final String spec = buildJobServiceSpec(enableStageMountV2)
 
+        // create bash wrapper script
+        if (enableStageMountV2) {
+            final TaskBean taskBean = new TaskBean(task)
+            if (taskBean.scratch == null) {
+                taskBean.scratch = '/scratch'
+            }
+            final BashWrapperBuilder builder = new BashWrapperBuilder(taskBean)
+            builder.build()
+        } else {
+            final SnowflakeWrapperBuilder builder = new SnowflakeWrapperBuilder(task)
+            builder.build()
+        }
+
+        final String spec = buildJobServiceSpec(enableStageMountV2)
         final String defaultComputePool = executor.snowflakeConfig.get("computePool")
         final String eai = executor.snowflakeConfig.getOrDefault("externalAccessIntegrations", "")
 
@@ -192,6 +202,10 @@ from specification
         final String workDirStage = executor.snowflakeConfig.get("workDirStage")
         result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName), enableStageMountV2)
 
+        if (enableStageMountV2) {
+            result.addLocalVolume("/scratch")
+        }
+
         if (!result.volumeMounts.empty){
             container.volumeMounts = result.volumeMounts
         }
@@ -231,6 +245,13 @@ from specification
                 new Volume(volumeName, new StageConfig("@"+workDirStage, true))
                 : new Volume(volumeName, "@"+workDirStage))
         }
+
+        void addLocalVolume(String mountPath) {
+            final String volumeName = "volume-local-" + volumeMounts.size()
+            volumeMounts.add(new VolumeMount(volumeName, mountPath))
+            volumes.add(new Volume(volumeName, "local"))
+        }
+
     }
     
     private static StageMounts parseStageMounts(String input, boolean enableStageMountV2){
