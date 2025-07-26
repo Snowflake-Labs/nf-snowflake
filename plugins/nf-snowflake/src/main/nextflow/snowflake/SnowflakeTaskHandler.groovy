@@ -23,7 +23,6 @@ import nextflow.util.Escape
 import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.representer.Representer
-import org.yaml.snakeyaml.introspector.BeanAccess
 import org.yaml.snakeyaml.introspector.Property
 import org.yaml.snakeyaml.nodes.MappingNode
 
@@ -41,6 +40,7 @@ class SnowflakeTaskHandler extends TaskHandler {
     private SnowflakeExecutor executor
     private String jobServiceName
     private static final String containerName = 'main'
+    private static final String scratchDir = '/scratch'
     
     // Static YAML object for efficient reuse with custom representer
     private static final Yaml yaml = createYamlDumper()
@@ -142,7 +142,7 @@ class SnowflakeTaskHandler extends TaskHandler {
         if (enableStageMountV2) {
             final TaskBean taskBean = new TaskBean(task)
             if (taskBean.scratch == null) {
-                taskBean.scratch = '/scratch'
+                taskBean.scratch = scratchDir
             }
             final BashWrapperBuilder builder = new BashWrapperBuilder(taskBean)
             builder.build()
@@ -203,7 +203,7 @@ from specification
         result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName), enableStageMountV2)
 
         if (enableStageMountV2) {
-            result.addLocalVolume("/scratch")
+            result.addLocalVolume(scratchDir)
         }
 
         if (!result.volumeMounts.empty){
