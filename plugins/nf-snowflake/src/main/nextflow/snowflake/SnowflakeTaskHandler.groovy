@@ -6,6 +6,7 @@ import net.snowflake.client.jdbc.QueryStatusV2
 import net.snowflake.client.jdbc.SnowflakeResultSet
 import nextflow.exception.ProcessUnrecoverableException
 import nextflow.executor.BashWrapperBuilder
+import nextflow.processor.TaskBean
 import nextflow.processor.TaskHandler
 import nextflow.processor.TaskRun
 import nextflow.processor.TaskConfig
@@ -14,6 +15,7 @@ import nextflow.snowflake.spec.Container
 import nextflow.snowflake.spec.ResourceItems
 import nextflow.snowflake.spec.Resources
 import nextflow.snowflake.spec.SnowflakeJobServiceSpec
+import nextflow.snowflake.spec.StageConfig
 import nextflow.snowflake.spec.Spec
 import nextflow.snowflake.spec.Volume
 import nextflow.snowflake.spec.VolumeMount
@@ -21,7 +23,6 @@ import nextflow.util.Escape
 import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.representer.Representer
-import org.yaml.snakeyaml.introspector.BeanAccess
 import org.yaml.snakeyaml.introspector.Property
 import org.yaml.snakeyaml.nodes.MappingNode
 
@@ -39,6 +40,7 @@ class SnowflakeTaskHandler extends TaskHandler {
     private SnowflakeExecutor executor
     private String jobServiceName
     private static final String containerName = 'main'
+    private static final String scratchDir = '/scratch'
     
     // Static YAML object for efficient reuse with custom representer
     private static final Yaml yaml = createYamlDumper()
@@ -133,12 +135,23 @@ class SnowflakeTaskHandler extends TaskHandler {
 
     @Override
     void submit(){
+        final String enableV2Str = executor.snowflakeConfig.getOrDefault("enableStageMountV2", "false")
+        final Boolean enableStageMountV2 = Boolean.parseBoolean(enableV2Str)
+
         // create bash wrapper script
-        final SnowflakeWrapperBuilder builder = new SnowflakeWrapperBuilder(task)
-        builder.build()
+        if (enableStageMountV2) {
+            final TaskBean taskBean = new TaskBean(task)
+            if (taskBean.scratch == null) {
+                taskBean.scratch = scratchDir
+            }
+            final BashWrapperBuilder builder = new BashWrapperBuilder(taskBean)
+            builder.build()
+        } else {
+            final SnowflakeWrapperBuilder builder = new SnowflakeWrapperBuilder(task)
+            builder.build()
+        }
 
-        final String spec = buildJobServiceSpec()
-
+        final String spec = buildJobServiceSpec(enableStageMountV2)
         final String defaultComputePool = executor.snowflakeConfig.get("computePool")
         final String eai = executor.snowflakeConfig.getOrDefault("externalAccessIntegrations", "")
 
@@ -165,7 +178,7 @@ from specification
         //TODO validate compute pool is specified
     }
 
-    private String buildJobServiceSpec() {
+    private String buildJobServiceSpec(Boolean enableStageMountV2) {
         TaskConfig taskCfg = this.task.getConfig()
         Container container = new Container()
         container.name = containerName
@@ -183,11 +196,15 @@ from specification
         }
 
         final String mounts = executor.snowflakeConfig.get("stageMounts")
-        StageMounts result = parseStageMounts(mounts)
+        StageMounts result = parseStageMounts(mounts, enableStageMountV2)
 
         final String workDir = executor.getWorkDir().toUriString()
         final String workDirStage = executor.snowflakeConfig.get("workDirStage")
-        result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName))
+        result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName), enableStageMountV2)
+
+        if (enableStageMountV2) {
+            result.addLocalVolume(scratchDir)
+        }
 
         if (!result.volumeMounts.empty){
             container.volumeMounts = result.volumeMounts
@@ -220,14 +237,24 @@ from specification
             this.volumeMounts = volumeMounts
         }
 
-        void addWorkDirMount(String workDir, String workDirStage) {
+        void addWorkDirMount(String workDir, String workDirStage, boolean enableStageMountV2) {
             final String volumeName = "volume" + volumeMounts.size()
             volumeMounts.add(new VolumeMount(volumeName, workDir))
-            volumes.add(new Volume(volumeName, "@"+workDirStage))
+            volumes.add(
+                enableStageMountV2 ?
+                new Volume(volumeName, new StageConfig("@"+workDirStage, true))
+                : new Volume(volumeName, "@"+workDirStage))
         }
+
+        void addLocalVolume(String mountPath) {
+            final String volumeName = "volume-local-" + volumeMounts.size()
+            volumeMounts.add(new VolumeMount(volumeName, mountPath))
+            volumes.add(new Volume(volumeName, "local"))
+        }
+
     }
     
-    private static StageMounts parseStageMounts(String input){
+    private static StageMounts parseStageMounts(String input, boolean enableStageMountV2){
         if (input == null) {
             return new StageMounts()
         }
@@ -243,7 +270,11 @@ from specification
 
             final String volumeName = "volume" + i
             volumeMounts.add(new VolumeMount(volumeName, mountParts[1]))
-            volumes.add(new Volume(volumeName, "@"+mountParts[0]))
+
+            final Volume volume = enableStageMountV2
+             ? new Volume(volumeName, new StageConfig("@"+mountParts[0], true))
+             : new Volume(volumeName, "@"+mountParts[0])
+            volumes.add(volume)
         }
 
         return new StageMounts(volumeMounts, volumes)
