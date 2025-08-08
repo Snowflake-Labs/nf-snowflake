@@ -135,7 +135,7 @@ class SnowflakeTaskHandler extends TaskHandler {
 
     @Override
     void submit(){
-        final String enableV2Str = executor.snowflakeConfig.getOrDefault("enableStageMountV2", "false")
+        final String enableV2Str = executor.snowflakeConfig.getOrDefault("enableStageMountV2", "true")
         final Boolean enableStageMountV2 = Boolean.parseBoolean(enableV2Str)
 
         // create bash wrapper script
