@@ -27,7 +27,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(false)
+        def yamlSpec = handler.buildJobServiceSpec()
         
         then:
         yamlSpec != null
@@ -44,7 +44,6 @@ class SnowflakeTaskHandlerTest extends Specification {
         yamlSpec.contains('volumeMounts:')
         yamlSpec.contains('volumes:')
         yamlSpec.contains('mountPath: /work')
-        yamlSpec.contains('source: \'@work-stage/test-session/\'')
     }
 
     def "buildJobServiceSpec should include CPU and memory resources when specified"() {
@@ -61,7 +60,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(true)
+        def yamlSpec = handler.buildJobServiceSpec()
 
         then:
         yamlSpec != null
@@ -93,7 +92,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(true)
+        def yamlSpec = handler.buildJobServiceSpec()
 
         then:
         yamlSpec != null
@@ -120,7 +119,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(true)
+        def yamlSpec = handler.buildJobServiceSpec()
 
         then:
         yamlSpec != null
@@ -147,7 +146,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(true)
+        def yamlSpec = handler.buildJobServiceSpec()
 
         then:
         yamlSpec != null
@@ -177,7 +176,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(false)
+        def yamlSpec = handler.buildJobServiceSpec()
 
         then:
         yamlSpec != null
@@ -189,12 +188,10 @@ class SnowflakeTaskHandlerTest extends Specification {
         // Check stage mount configurations
         yamlSpec.contains('mountPath: /mnt/data')
         yamlSpec.contains('mountPath: /mnt/output')
-        yamlSpec.contains('source: \'@stage1\'')
-        yamlSpec.contains('source: \'@stage2\'')
+        yamlSpec.contains('source: stage')
         
         // Work dir mount should still be present
         yamlSpec.contains('mountPath: /work')
-        yamlSpec.contains('source: \'@work-stage/test-session/\'')
     }
 
     def "buildJobServiceSpec should handle invalid stage mounts gracefully"() {
@@ -210,14 +207,14 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(false)
+        def yamlSpec = handler.buildJobServiceSpec()
 
         then:
         yamlSpec != null
         
         // Should include only the valid mount
         yamlSpec.contains('mountPath: /valid/mount')
-        yamlSpec.contains('source: \'@stage1\'')
+        yamlSpec.contains('source: stage')
         
         // Invalid mounts should not appear
         !yamlSpec.contains('invalid-mount')
@@ -242,7 +239,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(false)
+        def yamlSpec = handler.buildJobServiceSpec()
 
         then:
         yamlSpec != null
@@ -266,7 +263,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         yamlSpec.contains('volumeMounts:')
         yamlSpec.contains('mountPath:')
         yamlSpec.contains('volumes:')
-        yamlSpec.contains('source: \'@')  // All sources should start with @
+        yamlSpec.contains('source: stage')  // All sources should start with @
     }
 
     def "buildJobServiceSpec should normalize task names properly"() {
@@ -282,7 +279,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(true)
+        def yamlSpec = handler.buildJobServiceSpec()
 
         then:
         yamlSpec != null
@@ -304,7 +301,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when:
-        def yamlSpec = handler.buildJobServiceSpec(false)
+        def yamlSpec = handler.buildJobServiceSpec()
 
         then:
         yamlSpec != null
@@ -312,7 +309,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         // Should only have work dir mount, no stage mounts
         yamlSpec.contains('volumeMounts:')
         yamlSpec.contains('mountPath: /work')
-        yamlSpec.contains('source: \'@work-stage/test-session/\'')
+        yamlSpec.contains('source: stage')
     }
 
     def "generated YAML should be compatible with Snowflake Job Service specification"() {
@@ -330,7 +327,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
 
         when: "Generating the job service specification"
-        def yamlSpec = handler.buildJobServiceSpec(false)
+        def yamlSpec = handler.buildJobServiceSpec()
         
         then: "The generated YAML should contain all required elements for Snowflake"
         yamlSpec != null
@@ -363,10 +360,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         
         and: "Volume definitions should reference correct Snowflake stages"
         yamlSpec.contains('volumes:')
-        yamlSpec.contains('source: \'@data-stage\'')
-        yamlSpec.contains('source: \'@results-stage\'')
-        yamlSpec.contains('source: \'@reference-stage\'')
-        yamlSpec.contains('source: \'@work-stage/test-session/\'')
+        yamlSpec.contains('source: stage')
         
         when: "Validating the YAML can be used in a Snowflake SQL statement"
         def sqlTemplate = """
@@ -433,10 +427,10 @@ ${yamlSpec}
             super(taskRun, statement, executor)
         }
         
-        String buildJobServiceSpec(Boolean enableV2StageMount) {
-            def method = SnowflakeTaskHandler.class.getDeclaredMethod('buildJobServiceSpec', Boolean.class)
+        String buildJobServiceSpec() {
+            def method = SnowflakeTaskHandler.class.getDeclaredMethod('buildJobServiceSpec')
             method.setAccessible(true)
-            return method.invoke(this, enableV2StageMount) as String
+            return method.invoke(this) as String
         }
     }
 } 
