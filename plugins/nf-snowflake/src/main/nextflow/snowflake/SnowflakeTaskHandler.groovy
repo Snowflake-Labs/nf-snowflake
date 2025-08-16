@@ -135,24 +135,16 @@ class SnowflakeTaskHandler extends TaskHandler {
 
     @Override
     void submit(){
-        final String enableV2Str = executor.snowflakeConfig.getOrDefault("enableStageMountV2", "true")
-        final Boolean enableStageMountV2 = Boolean.parseBoolean(enableV2Str)
-
-        // create bash wrapper script
-        if (enableStageMountV2) {
-            final TaskBean taskBean = new TaskBean(task)
-            if (taskBean.scratch == null) {
-                taskBean.scratch = scratchDir
-            }
-            final BashWrapperBuilder builder = new BashWrapperBuilder(taskBean)
-            builder.build()
-        } else {
-            final SnowflakeWrapperBuilder builder = new SnowflakeWrapperBuilder(task)
-            builder.build()
+        final TaskBean taskBean = new TaskBean(task)
+        if (taskBean.scratch == null) {
+            taskBean.scratch = scratchDir
         }
+        final BashWrapperBuilder builder = new BashWrapperBuilder(taskBean)
+        builder.build()
 
-        final String spec = buildJobServiceSpec(enableStageMountV2)
-        final String defaultComputePool = executor.snowflakeConfig.get("computePool")
+        final String spec = buildJobServiceSpec()
+        final String computePoolEnv = System.getenv("computePool")
+        final String defaultComputePool = computePoolEnv!=null ? computePoolEnv : executor.snowflakeConfig.get("computePool")
         final String eai = executor.snowflakeConfig.getOrDefault("externalAccessIntegrations", "")
 
         String executeSql = String.format("""
@@ -178,7 +170,7 @@ from specification
         //TODO validate compute pool is specified
     }
 
-    private String buildJobServiceSpec(Boolean enableStageMountV2) {
+    private String buildJobServiceSpec() {
         TaskConfig taskCfg = this.task.getConfig()
         Container container = new Container()
         container.name = containerName
@@ -195,16 +187,18 @@ from specification
             container.resources.requests.memory = memory ? memory.toMega() + "Mi" : null
         }
 
-        final String mounts = executor.snowflakeConfig.get("stageMounts")
-        StageMounts result = parseStageMounts(mounts, enableStageMountV2)
+        final String mountsEnv = System.getenv("stageMounts")
+        final String mounts = mountsEnv != null ? mountsEnv : executor.snowflakeConfig.get("stageMounts")
+        StageMounts result = parseStageMounts(mounts)
 
         final String workDir = executor.getWorkDir().toUriString()
-        final String workDirStage = executor.snowflakeConfig.get("workDirStage")
-        result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName), enableStageMountV2)
 
-        if (enableStageMountV2) {
-            result.addLocalVolume(scratchDir)
-        }
+        final String workDirStageEnv = System.getenv("workDirStage")
+        final String workDirStage = workDirStageEnv != null ? workDirStageEnv :
+            executor.snowflakeConfig.get("workDirStage")
+        result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName))
+
+        result.addLocalVolume(scratchDir)
 
         if (!result.volumeMounts.empty){
             container.volumeMounts = result.volumeMounts
@@ -237,13 +231,12 @@ from specification
             this.volumeMounts = volumeMounts
         }
 
-        void addWorkDirMount(String workDir, String workDirStage, boolean enableStageMountV2) {
+        void addWorkDirMount(String workDir, String workDirStage) {
             final String volumeName = "volume" + volumeMounts.size()
             volumeMounts.add(new VolumeMount(volumeName, workDir))
             volumes.add(
-                enableStageMountV2 ?
                 new Volume(volumeName, new StageConfig("@"+workDirStage, true))
-                : new Volume(volumeName, "@"+workDirStage))
+            )
         }
 
         void addLocalVolume(String mountPath) {
@@ -254,7 +247,7 @@ from specification
 
     }
     
-    private static StageMounts parseStageMounts(String input, boolean enableStageMountV2){
+    private static StageMounts parseStageMounts(String input){
         if (input == null) {
             return new StageMounts()
         }
@@ -271,9 +264,7 @@ from specification
             final String volumeName = "volume" + i
             volumeMounts.add(new VolumeMount(volumeName, mountParts[1]))
 
-            final Volume volume = enableStageMountV2
-             ? new Volume(volumeName, new StageConfig("@"+mountParts[0], true))
-             : new Volume(volumeName, "@"+mountParts[0])
+            final Volume volume = new Volume(volumeName, new StageConfig("@"+mountParts[0], true))
             volumes.add(volume)
         }
 
