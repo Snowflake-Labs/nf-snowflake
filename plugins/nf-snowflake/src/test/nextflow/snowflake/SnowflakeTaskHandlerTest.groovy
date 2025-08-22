@@ -1,5 +1,6 @@
 package nextflow.snowflake
 
+import nextflow.processor.TaskId
 import spock.lang.Specification
 import nextflow.processor.TaskRun
 import nextflow.processor.TaskConfig
@@ -396,6 +397,7 @@ ${yamlSpec}
         taskRun.container >> config.container
         taskRun.getName() >> 'test-task'
         taskRun.workDir >> Paths.get('/work')
+        taskRun.id >> new TaskId(123)
         
         taskConfig.getCpus() >> config.cpus
         taskConfig.getMemory() >> (config.memory ? MemoryUnit.of(config.memory) : null)

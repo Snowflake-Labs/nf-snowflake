@@ -10,6 +10,7 @@ import nextflow.processor.TaskBean
 import nextflow.processor.TaskHandler
 import nextflow.processor.TaskRun
 import nextflow.processor.TaskConfig
+import nextflow.processor.TaskId
 import nextflow.processor.TaskStatus
 import nextflow.snowflake.spec.Container
 import nextflow.snowflake.spec.ResourceItems
@@ -79,7 +80,7 @@ class SnowflakeTaskHandler extends TaskHandler {
         super(taskRun)
         this.statement = statement
         this.executor = executor
-        this.jobServiceName = normalizeTaskName(executor.session.runName, task.getName())
+        this.jobServiceName = normalizeTaskName(executor.session.runName, task.getId())
         validateConfiguration()
     }
 
@@ -146,17 +147,19 @@ class SnowflakeTaskHandler extends TaskHandler {
         final String computePoolEnv = System.getenv("computePool")
         final String defaultComputePool = computePoolEnv!=null ? computePoolEnv : executor.snowflakeConfig.get("computePool")
         final String eai = executor.snowflakeConfig.getOrDefault("externalAccessIntegrations", "")
+        final String jobComment = String.format("nextflow task name: %s", task.getName())
 
         String executeSql = String.format("""
 execute job service
 in compute pool %s
 name = %s
+comment = '%s'
 external_access_integrations=(%s)
 from specification
 \$\$
 %s
 \$\$
-""", defaultComputePool, jobServiceName, eai, spec)
+""", defaultComputePool, jobServiceName, jobComment, eai, spec)
 
         resultSet = statement.unwrap(SnowflakeStatement.class).executeAsyncQuery(executeSql)
         this.status = TaskStatus.SUBMITTED
@@ -271,9 +274,8 @@ from specification
         return new StageMounts(volumeMounts, volumes)
     }
 
-    private static String normalizeTaskName(String sessionRunName, String taskName) {
-        String jobName = (sessionRunName + "_" + taskName).replaceAll("[^A-Za-z0-9]", "_")
-        return jobName.replaceAll("^_+", "").replaceAll("_+\$", "")
+    private static String normalizeTaskName(String sessionRunName, TaskId taskId) {
+       return String.format("NXF_TASK_%s_%s", sessionRunName, taskId.toString())
     }
 
     private static List<String> classicSubmitCli(TaskRun task) {
