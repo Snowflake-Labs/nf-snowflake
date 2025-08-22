@@ -1,7 +1,7 @@
 FROM nextflow/nextflow:25.04.6
 
 # Define version argument with default value
-ARG PLUGIN_VERSION=0.6.3
+ARG PLUGIN_VERSION=0.8.1
 
 # Create plugins directory
 RUN mkdir -p /.nextflow/plugins && nextflow plugin install nf-schema
