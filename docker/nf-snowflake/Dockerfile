@@ -1,7 +1,7 @@
 FROM nextflow/nextflow:25.04.6
 
 # Define version argument with default value
-ARG PLUGIN_VERSION=0.8.1
+ARG PLUGIN_VERSION=0.8.2
 
 # Create plugins directory
 RUN mkdir -p /.nextflow/plugins && nextflow plugin install nf-schema
@@ -14,7 +14,7 @@ RUN yum install -y git tar
 RUN curl -O https://bootstrap.pypa.io/get-pip.py && \
     python3 get-pip.py && \
     rm get-pip.py && \
-    pip install websockets
+    pip install aiohttp
 
 COPY docker/nf-snowflake/pty_server.py /app/pty_server.py
 

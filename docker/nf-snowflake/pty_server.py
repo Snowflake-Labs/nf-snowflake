@@ -8,7 +8,8 @@ Designed for single client connection.
 """
 
 import asyncio
-import websockets
+import aiohttp
+from aiohttp import web
 import pty
 import os
 import subprocess
@@ -29,21 +30,31 @@ class NextflowPTYServer:
         self.master_fd: Optional[int] = None
         self.client_websocket = None
         
-    async def handle_client(self, websocket):
+    async def handle_websocket(self, request):
         """Handle the single WebSocket client connection"""
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        
         if self.client_websocket is not None:
             logger.warning("Client already connected, rejecting new connection")
-            await websocket.close(code=1013, reason="Server busy")
-            return
+            await ws.close(code=aiohttp.WSMsgType.CLOSE, message=b"Server busy")
+            return ws
             
-        logger.info(f"Client connected: {websocket.remote_address}")
-        self.client_websocket = websocket
+        logger.info(f"Client connected: {request.remote}")
+        self.client_websocket = ws
         
         try:
-            await websocket.wait_closed()
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.ERROR:
+                    logger.error(f'WebSocket error: {ws.exception()}')
+                    break
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
         finally:
-            logger.info(f"Client disconnected: {websocket.remote_address}")
+            logger.info(f"Client disconnected: {request.remote}")
             self.client_websocket = None
+            
+        return ws
     
     async def send_message(self, message_type: str, data: str = "", **kwargs):
         """Send a message to the connected client"""
@@ -58,9 +69,9 @@ class NextflowPTYServer:
         }
         
         try:
-            await self.client_websocket.send(json.dumps(message))
-        except websockets.exceptions.ConnectionClosed:
-            logger.info("Client connection closed while sending message")
+            await self.client_websocket.send_str(json.dumps(message))
+        except Exception as e:
+            logger.info(f"Client connection closed while sending message: {e}")
             self.client_websocket = None
     
     async def read_pty_output(self):
@@ -168,13 +179,31 @@ class NextflowPTYServer:
                         self.process.kill()
                         self.process.wait()
     
+    async def healthz_handler(self, request):
+        """Health check endpoint"""
+        return web.Response(text="OK", status=200)
+    
     async def start_server(self, nextflow_args: list):
-        """Start the WebSocket server and run Nextflow"""
-        logger.info(f"Starting WebSocket server on {self.host}:{self.port}")
+        """Start the HTTP/WebSocket server and run Nextflow"""
+        logger.info(f"Starting HTTP/WebSocket server on {self.host}:{self.port}")
         
-        # Start WebSocket server
-        server = await websockets.serve(self.handle_client, self.host, self.port)
-        logger.info("WebSocket server started, waiting for client connection...")
+        # Create aiohttp application
+        app = web.Application()
+        
+        # Add routes
+        app.router.add_get('/ws', self.handle_websocket)
+        app.router.add_get('/healthz', self.healthz_handler)
+        
+        # Start server
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, self.host, self.port)
+        await site.start()
+        
+        logger.info(f"Server started on {self.host}:{self.port}")
+        logger.info("WebSocket endpoint: /ws")
+        logger.info("Health check endpoint: /healthz")
+        logger.info("Waiting for client connection...")
         
         try:
             # Wait for client to connect
@@ -192,8 +221,7 @@ class NextflowPTYServer:
             return exit_code
             
         finally:
-            server.close()
-            await server.wait_closed()
+            await runner.cleanup()
 
 def main():
     parser = argparse.ArgumentParser(description="Run Nextflow in PTY with WebSocket streaming")
