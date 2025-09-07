@@ -10,6 +10,7 @@ Designed for single client connection.
 import asyncio
 import aiohttp
 from aiohttp import web
+from aiohttp.web_log import AccessLogger
 import pty
 import os
 import subprocess
@@ -17,10 +18,37 @@ import json
 import argparse
 import sys
 import logging
+import threading
+import time
 from typing import Optional
 
-logging.basicConfig(level=logging.INFO)
+class WebSocketServerFormatter(logging.Formatter):
+    """Custom formatter that adds [websocket.server] tag to all log messages"""
+
+    def format(self, record):
+        # Get the original formatted message
+        original_message = super().format(record)
+        # Add the websocket.server tag
+        return f"[websocket.server] {original_message}"
+
+# Configure logging with custom formatter
+handler = logging.StreamHandler(sys.stderr)
+formatter = WebSocketServerFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+
+# Configure the root logger
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(__name__)
+
+class NoHealthzAccessLogger(AccessLogger):
+    """Custom access logger that ignores healthz endpoint requests"""
+
+    def log(self, request, response, time):
+        # Skip logging for healthz endpoint
+        if request.path == '/healthz':
+            return
+        # Use default logging for all other requests
+        super().log(request, response, time)
 
 class NextflowPTYServer:
     def __init__(self, host: str = "0.0.0.0", port: int = 8765):
@@ -29,7 +57,9 @@ class NextflowPTYServer:
         self.process: Optional[subprocess.Popen] = None
         self.master_fd: Optional[int] = None
         self.client_websocket = None
-        
+        self.log_tail_thread: Optional[threading.Thread] = None
+        self.log_tail_stop_event = threading.Event()
+
     async def handle_websocket(self, request):
         """Handle the single WebSocket client connection"""
         ws = web.WebSocketResponse()
@@ -101,6 +131,48 @@ class NextflowPTYServer:
         except (OSError, BlockingIOError):
             return b""
     
+    def _tail_nextflow_log(self):
+        """Background thread to tail .nextflow.log file and emit to stderr"""
+        log_file_path = ".nextflow.log"
+
+        # Wait for log file to exist
+        while not os.path.exists(log_file_path) and not self.log_tail_stop_event.is_set():
+            time.sleep(0.1)
+
+        if self.log_tail_stop_event.is_set():
+            return
+
+        try:
+            with open(log_file_path, 'r', encoding='utf-8', errors='replace') as f:
+                # Move to end of file to start tailing
+                f.seek(0, 2)  # Seek to end
+
+                while not self.log_tail_stop_event.is_set():
+                    line = f.readline()
+                    if line:
+                        # Emit line to stderr (remove newline since print adds one)
+                        print(f"[.nextflow.log] {line.rstrip()}", file=sys.stderr)
+                    else:
+                        # No new line, wait a bit before checking again
+                        time.sleep(0.1)
+        except Exception as e:
+            logger.error(f"Error tailing .nextflow.log: {e}")
+
+    def _start_log_tail_thread(self):
+        """Start the background thread for tailing .nextflow.log"""
+        if self.log_tail_thread is None or not self.log_tail_thread.is_alive():
+            self.log_tail_stop_event.clear()
+            self.log_tail_thread = threading.Thread(target=self._tail_nextflow_log, daemon=True)
+            self.log_tail_thread.start()
+            logger.info("Started background thread for tailing .nextflow.log")
+
+    def _stop_log_tail_thread(self):
+        """Stop the background thread for tailing .nextflow.log"""
+        if self.log_tail_thread and self.log_tail_thread.is_alive():
+            self.log_tail_stop_event.set()
+            self.log_tail_thread.join(timeout=5)
+            logger.info("Stopped background thread for tailing .nextflow.log")
+
     async def run_nextflow(self, nextflow_args: list):
         """Run Nextflow in a PTY using subprocess"""
         try:
@@ -109,12 +181,6 @@ class NextflowPTYServer:
             
             # Set environment for ANSI output
             env = os.environ.copy()
-            #env.update({
-            #    'NXF_ANSI_LOG': 'true',
-            #    'NXF_OPTS': '-Djansi.passthrough=true',
-            #    'TERM': 'xterm-256color',
-            #    'FORCE_COLOR': '1'
-            #})
             
             # Build command
             logger.info(f"Executing: {' '.join(nextflow_args)}")
@@ -136,6 +202,9 @@ class NextflowPTYServer:
             os.close(slave_fd)
             
             await self.send_message("status", status="started", pid=self.process.pid)
+            
+            # Start the background thread for tailing .nextflow.log
+            self._start_log_tail_thread()
             
             # Start reading PTY output
             read_task = asyncio.create_task(self.read_pty_output())
@@ -162,6 +231,9 @@ class NextflowPTYServer:
             return 1
         
         finally:
+            # Stop the background log tail thread
+            self._stop_log_tail_thread()
+            
             if self.master_fd:
                 try:
                     os.close(self.master_fd)
@@ -194,8 +266,8 @@ class NextflowPTYServer:
         app.router.add_get('/ws', self.handle_websocket)
         app.router.add_get('/healthz', self.healthz_handler)
         
-        # Start server
-        runner = web.AppRunner(app)
+        # Start server with custom access logger
+        runner = web.AppRunner(app, access_log_class=NoHealthzAccessLogger)
         await runner.setup()
         site = web.TCPSite(runner, self.host, self.port)
         await site.start()
