@@ -1,0 +1,304 @@
+package nextflow.snowflake
+
+import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.sql.Connection
+import java.sql.DriverManager
+import java.sql.SQLException
+import java.util.LinkedList
+import java.util.HashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
+import java.util.Queue
+import java.util.Map
+
+@Slf4j
+@CompileStatic
+class SnowflakeConnectionPool {
+    
+    // Connection expiration time: 2 hours in milliseconds
+    private static final long CONNECTION_EXPIRY_TIME = 2 * 60 * 60 * 1000L
+    
+    // Pool configuration
+    private static final int MAX_POOL_SIZE = 10
+    private static final int MIN_POOL_SIZE = 1
+    
+    // Pool state
+    private final Queue<PooledConnection> availableConnections = new LinkedList<>()
+    private final Map<Connection, PooledConnection> allConnections = new HashMap<>()
+    private final AtomicInteger totalConnections = new AtomicInteger(0)
+    private final ReentrantLock poolLock = new ReentrantLock()
+    
+    // Singleton instance
+    private static final SnowflakeConnectionPool INSTANCE = new SnowflakeConnectionPool()
+    
+    static {
+        Class.forName("net.snowflake.client.jdbc.SnowflakeDriver")
+        
+        // Shutdown hook to cleanup resources
+        Runtime.getRuntime().addShutdownHook(new Thread({
+            INSTANCE.shutdown()
+        }))
+    }
+    
+    private SnowflakeConnectionPool() {
+        // Initialize with minimum connections
+        initializePool()
+    }
+    
+    /**
+     * Get a connection from the pool
+     */
+    Connection getConnection() {
+        poolLock.lock()
+        try {
+            // Try to get an available connection
+            PooledConnection pooledConn = getValidConnection()
+            
+            if (pooledConn == null) {
+                // No valid connections available, create a new one if possible
+                if (totalConnections.get() < MAX_POOL_SIZE) {
+                    pooledConn = createNewPooledConnection()
+                } else {
+                    // Pool is full, wait and retry or throw exception
+                    throw new SQLException("Connection pool exhausted. Maximum pool size: ${MAX_POOL_SIZE}")
+                }
+            }
+            
+            if (pooledConn != null) {
+                pooledConn.lastBorrowTime = System.currentTimeMillis()
+                log.debug("Retrieved connection from pool. Total connections: ${totalConnections.get()}")
+                return pooledConn.connection
+            }
+            
+            throw new SQLException("Unable to obtain connection from pool")
+            
+        } finally {
+            poolLock.unlock()
+        }
+    }
+    
+    /**
+     * Return a connection to the pool
+     */
+    void returnConnection(Connection connection) {
+        if (connection == null) return
+        
+        poolLock.lock()
+        try {
+            PooledConnection pooledConn = allConnections.get(connection)
+            if (pooledConn != null) {
+                // Update the return timestamp
+                pooledConn.lastReturnTime = System.currentTimeMillis()
+                
+                // Check if connection is still valid (but don't check expiration on return)
+                if (isConnectionPhysicallyValid(pooledConn)) {
+                    availableConnections.offer(pooledConn)
+                    log.debug("Returned connection to pool")
+                } else {
+                    // Connection is physically invalid, remove it
+                    removeConnection(pooledConn)
+                    log.debug("Removed invalid connection from pool")
+                }
+            }
+        } finally {
+            poolLock.unlock()
+        }
+    }
+    
+    /**
+     * Initialize the pool with minimum connections
+     */
+    private void initializePool() {
+        poolLock.lock()
+        try {
+            for (int i = 0; i < MIN_POOL_SIZE; i++) {
+                try {
+                    PooledConnection pooledConn = createNewPooledConnection()
+                    if (pooledConn != null) {
+                        availableConnections.offer(pooledConn)
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to create initial connection: ${e.message}")
+                }
+            }
+            log.info("Initialized connection pool with ${totalConnections.get()} connections")
+        } finally {
+            poolLock.unlock()
+        }
+    }
+    
+    /**
+     * Get a valid connection from available connections
+     */
+    private PooledConnection getValidConnection() {
+        PooledConnection pooledConn = availableConnections.poll()
+        while (pooledConn != null) {
+            if (isConnectionExpired(pooledConn)) {
+                // Connection expired, remove it and try next available connection
+                log.debug("Connection expired after 2 hours, removing and trying next available connection")
+                removeConnection(pooledConn)
+                pooledConn = availableConnections.poll()
+            } else { // connection not expired
+                if (isConnectionPhysicallyValid(pooledConn)) {
+                    return pooledConn
+                } else {
+                    // Remove physically invalid connection
+                    removeConnection(pooledConn)
+                    pooledConn = availableConnections.poll()
+                }
+            }
+        }
+        return null
+    }
+    
+    /**
+     * Create a new pooled connection
+     */
+    private PooledConnection createNewPooledConnection() {
+        try {
+            Connection rawConnection = createRawConnection()
+            PooledConnection pooledConn = new PooledConnection(rawConnection)
+            allConnections.put(rawConnection, pooledConn)
+            totalConnections.incrementAndGet()
+            log.debug("Created new connection. Total connections: ${totalConnections.get()}")
+            return pooledConn
+        } catch (Exception e) {
+            log.error("Failed to create new connection: ${e.message}", e)
+            return null
+        }
+    }
+    
+    /**
+     * Create a raw database connection
+     */
+    private Connection createRawConnection() {
+        final String token = new String(Files.readAllBytes(Paths.get("/snowflake/session/token")), StandardCharsets.UTF_8)
+
+        final Properties properties = new Properties()
+        properties.put("account", System.getenv("SNOWFLAKE_ACCOUNT"))
+        properties.put("database", System.getenv("SNOWFLAKE_DATABASE"))
+        properties.put("schema", System.getenv("SNOWFLAKE_SCHEMA"))
+        properties.put("authenticator", "oauth")
+        properties.put("token", token)
+        
+        return DriverManager.getConnection(
+                String.format("jdbc:snowflake://%s", System.getenv("SNOWFLAKE_HOST")),
+                properties)
+    }
+    
+    /**
+     * Check if a connection has expired based on when it was returned to the pool
+     */
+    private boolean isConnectionExpired(PooledConnection pooledConn) {
+        if (pooledConn == null) {
+            return true
+        }
+        
+        long currentTime = System.currentTimeMillis()
+        long timeInPool = currentTime - pooledConn.lastReturnTime
+        
+        if (timeInPool > CONNECTION_EXPIRY_TIME) {
+            log.debug("Connection expired after being in pool for ${timeInPool} ms (limit: ${CONNECTION_EXPIRY_TIME} ms)")
+            return true
+        }
+        
+        return false
+    }
+    
+    /**
+     * Check if a connection is physically valid (not closed, responsive)
+     */
+    private boolean isConnectionPhysicallyValid(PooledConnection pooledConn) {
+        if (pooledConn == null || pooledConn.connection == null) {
+            return false
+        }
+        
+        // Check if connection is still alive
+        try {
+            return !pooledConn.connection.isClosed()
+        } catch (SQLException e) {
+            log.debug("Connection physical validation failed: ${e.message}")
+            return false
+        }
+    }
+    
+    /**
+     * Remove a connection from the pool
+     */
+    private void removeConnection(PooledConnection pooledConn) {
+        if (pooledConn == null) return
+        
+        try {
+            allConnections.remove(pooledConn.connection)
+            totalConnections.decrementAndGet()
+            
+            if (!pooledConn.connection.isClosed()) {
+                pooledConn.connection.close()
+            }
+        } catch (SQLException e) {
+            log.warn("Error closing connection: ${e.message}")
+        }
+    }
+    
+    
+    /**
+     * Get pool statistics
+     */
+    Map<String, Object> getPoolStats() {
+        return [
+            totalConnections: totalConnections.get(),
+            availableConnections: availableConnections.size(),
+            maxPoolSize: MAX_POOL_SIZE,
+            minPoolSize: MIN_POOL_SIZE
+        ]
+    }
+    
+    /**
+     * Shutdown the pool
+     */
+    void shutdown() {
+        poolLock.lock()
+        try {
+            log.info("Shutting down connection pool")
+            
+            // Close all connections
+            allConnections.values().each { pooledConn ->
+                try {
+                    if (!pooledConn.connection.isClosed()) {
+                        pooledConn.connection.close()
+                    }
+                } catch (SQLException e) {
+                    log.warn("Error closing connection during shutdown: ${e.message}")
+                }
+            }
+            
+            allConnections.clear()
+            availableConnections.clear()
+            totalConnections.set(0)
+            
+        } finally {
+            poolLock.unlock()
+        }
+    }
+    
+    /**
+     * Inner class to hold connection metadata
+     */
+    private static class PooledConnection {
+        final Connection connection
+        final long creationTime
+        long lastBorrowTime
+        long lastReturnTime
+        
+        PooledConnection(Connection connection) {
+            this.connection = connection
+            this.creationTime = System.currentTimeMillis()
+            this.lastBorrowTime = creationTime
+            this.lastReturnTime = creationTime  // Initially set to creation time
+        }
+    }
+}

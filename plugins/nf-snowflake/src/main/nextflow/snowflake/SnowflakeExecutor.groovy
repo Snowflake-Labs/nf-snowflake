@@ -23,10 +23,6 @@ import java.sql.DriverManager
 @CompileStatic
 class SnowflakeExecutor extends Executor implements ExtensionPoint {
 
-    static {
-        Class.forName("net.snowflake.client.jdbc.SnowflakeDriver")
-    }
-
     private Connection connection
 
     String runtimeStageName
@@ -51,23 +47,7 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
     protected void register() {
         super.register()
         snowflakeConfig = session.config.navigate("snowflake") as Map
-        initSFConnection()
-    }
-
-    private void initSFConnection() {
-        final Properties properties = new Properties()
-        properties.put("account", System.getenv("SNOWFLAKE_ACCOUNT"))
-        properties.put("database", System.getenv("SNOWFLAKE_DATABASE"))
-        properties.put("schema", System.getenv("SNOWFLAKE_SCHEMA"))
-        properties.put("authenticator", "oauth")
-        properties.put("token", readLoginToken())
-        connection = DriverManager.getConnection(
-                String.format("jdbc:snowflake://%s", System.getenv("SNOWFLAKE_HOST")),
-                properties)
-    }
-
-    private static String readLoginToken() {
-        return new String(Files.readAllBytes(Paths.get("/snowflake/session/token")), StandardCharsets.UTF_8);
+        connection = SnowflakeConnectionPool.createConn()
     }
 
     @Override
@@ -77,6 +57,9 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
 
     @Override
     void shutdown() {
-        connection.close()
+        // Return connection to the pool instead of closing directly
+        if (connection != null) {
+            SnowflakeConnectionPool.returnConn(connection)
+        }
     }
 }

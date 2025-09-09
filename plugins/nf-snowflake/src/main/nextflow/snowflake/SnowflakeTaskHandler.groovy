@@ -84,6 +84,10 @@ class SnowflakeTaskHandler extends TaskHandler {
         validateConfiguration()
     }
 
+    @Override
+    void killTask() {
+        this.statement.cancel()
+    }
 
     @Override
     boolean checkIfRunning() {
@@ -102,12 +106,12 @@ class SnowflakeTaskHandler extends TaskHandler {
 
         QueryStatusV2 queryStatus = resultSet.unwrap(SnowflakeResultSet).getStatusV2()
         if (queryStatus.isSuccess()) {
-            // execute job did not expose error code. Just use exit code 1 for all failure case
             task.exitStatus = 0
             task.stdout = tryGetStdout()
             this.status = TaskStatus.COMPLETED
             return true
         } else if (queryStatus.isAnError()) {
+            // execute job did not expose error code. Just use exit code 1 for all failure case
             task.exitStatus = 1
             task.stdout = tryGetStdout()
             task.stderr = queryStatus.errorMessage

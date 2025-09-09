@@ -50,7 +50,7 @@ sourceSets {
 }
 
 ext{
-    nextflowVersion = '24.01.0-edge'
+    nextflowVersion = '25.04.6'
 }
 
 dependencies {
@@ -61,6 +61,7 @@ dependencies {
     // add here plugins depepencies
     implementation 'net.snowflake:snowflake-jdbc:3.16.0'
     implementation 'org.yaml:snakeyaml:2.2'
+    implementation 'org.codehaus.groovy:groovy-all:3.0.20'
 
     // test configuration
     testImplementation "org.apache.groovy:groovy:4.0.18"
