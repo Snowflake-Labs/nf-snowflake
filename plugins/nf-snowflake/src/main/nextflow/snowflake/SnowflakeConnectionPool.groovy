@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import java.util.Queue
 import java.util.Map
+import net.snowflake.client.jdbc.SnowflakeConnection
 
 @Slf4j
 @CompileStatic
@@ -24,7 +25,7 @@ class SnowflakeConnectionPool {
 
     // Pool state
     private final Queue<PooledConnection> availableConnections = new LinkedList<>()
-    private final Map<Connection, PooledConnection> allConnections = new HashMap<>()
+    private final Map<String, PooledConnection> allConnections = new HashMap<>()
     private final ReentrantLock poolLock = new ReentrantLock()
 
     // Singleton instance
@@ -39,6 +40,19 @@ class SnowflakeConnectionPool {
 
     public static SnowflakeConnectionPool getInstance() {
         return INSTANCE
+    }
+
+    /**
+     * Extract sessionID from a Connection by unwrapping to SnowflakeConnection
+     */
+    private String getSessionId(Connection connection) {
+        try {
+            SnowflakeConnection snowflakeConnection = connection.unwrap(SnowflakeConnection.class)
+            return snowflakeConnection.getSessionID()
+        } catch (SQLException e) {
+            log.warn("Failed to get session ID from connection: ${e.message}")
+            throw new RuntimeException("Unable to extract session ID", e)
+        }
     }
 
     /**
@@ -75,7 +89,8 @@ class SnowflakeConnectionPool {
 
         poolLock.lock()
         try {
-            PooledConnection pooledConn = allConnections.get(connection)
+            String sessionId = getSessionId(connection)
+            PooledConnection pooledConn = allConnections.get(sessionId)
             if (pooledConn != null) {
                 // Update the return timestamp
                 pooledConn.lastReturnTime = System.currentTimeMillis()
@@ -90,28 +105,6 @@ class SnowflakeConnectionPool {
                     log.debug("Removed invalid connection from pool")
                 }
             }
-        } finally {
-            poolLock.unlock()
-        }
-    }
-
-    /**
-     * Initialize the pool with minimum connections
-     */
-    private void initializePool() {
-        poolLock.lock()
-        try {
-            for (int i = 0; i < MIN_POOL_SIZE; i++) {
-                try {
-                    PooledConnection pooledConn = createNewPooledConnection()
-                    if (pooledConn != null) {
-                        availableConnections.offer(pooledConn)
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to create initial connection: ${e.message}")
-                }
-            }
-            log.info("Initialized connection pool with ${totalConnections.get()} connections")
         } finally {
             poolLock.unlock()
         }
@@ -147,10 +140,10 @@ class SnowflakeConnectionPool {
     private PooledConnection createNewPooledConnection() {
         try {
             Connection rawConnection = createRawConnection()
-            PooledConnection pooledConn = new PooledConnection(rawConnection)
-            allConnections.put(rawConnection, pooledConn)
-            totalConnections.incrementAndGet()
-            log.debug("Created new connection. Total connections: ${totalConnections.get()}")
+            String sessionId = getSessionId(rawConnection)
+            PooledConnection pooledConn = new PooledConnection(rawConnection, sessionId)
+            allConnections.put(sessionId, pooledConn)
+            log.debug("Created new connection. Total connections: ${allConnections.size()}")
             return pooledConn
         } catch (Exception e) {
             log.error("Failed to create new connection: ${e.message}", e)
@@ -219,8 +212,7 @@ class SnowflakeConnectionPool {
         if (pooledConn == null) return
 
         try {
-            allConnections.remove(pooledConn.connection)
-            totalConnections.decrementAndGet()
+            allConnections.remove(pooledConn.sessionId)
 
             if (!pooledConn.connection.isClosed()) {
                 pooledConn.connection.close()
@@ -230,58 +222,19 @@ class SnowflakeConnectionPool {
         }
     }
 
-
-    /**
-     * Get pool statistics
-     */
-    Map<String, Object> getPoolStats() {
-        return [
-                totalConnections: totalConnections.get(),
-                availableConnections: availableConnections.size(),
-                maxPoolSize: MAX_POOL_SIZE,
-                minPoolSize: MIN_POOL_SIZE
-        ]
-    }
-
-    /**
-     * Shutdown the pool
-     */
-    void shutdown() {
-        poolLock.lock()
-        try {
-            log.info("Shutting down connection pool")
-
-            // Close all connections
-            allConnections.values().each { pooledConn ->
-                try {
-                    if (!pooledConn.connection.isClosed()) {
-                        pooledConn.connection.close()
-                    }
-                } catch (SQLException e) {
-                    log.warn("Error closing connection during shutdown: ${e.message}")
-                }
-            }
-
-            allConnections.clear()
-            availableConnections.clear()
-            totalConnections.set(0)
-
-        } finally {
-            poolLock.unlock()
-        }
-    }
-
     /**
      * Inner class to hold connection metadata
      */
     private static class PooledConnection {
         final Connection connection
+        final String sessionId
         final long creationTime
         long lastBorrowTime
         long lastReturnTime
 
-        PooledConnection(Connection connection) {
+        PooledConnection(Connection connection, String sessionId) {
             this.connection = connection
+            this.sessionId = sessionId
             this.creationTime = System.currentTimeMillis()
             this.lastBorrowTime = creationTime
             this.lastReturnTime = creationTime  // Initially set to creation time
