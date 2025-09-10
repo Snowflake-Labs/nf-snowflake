@@ -1,1 +1,2 @@
 nextflow.snowflake.SnowflakeExecutor
+nextflow.snowflake.SnowflakeObserverFactory
