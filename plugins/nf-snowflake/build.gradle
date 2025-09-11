@@ -50,7 +50,7 @@ sourceSets {
 }
 
 ext{
-    nextflowVersion = '24.10.8'
+    nextflowVersion = '24.04.6'
 }
 
 dependencies {

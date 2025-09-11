@@ -31,7 +31,7 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
 
     @Override
     TaskHandler createTaskHandler(TaskRun task) {
-        return new SnowflakeTaskHandler(task, this)
+        return new SnowflakeTaskHandler(task, this, SnowflakeConnectionPool.getInstance())
     }
 
     /**
