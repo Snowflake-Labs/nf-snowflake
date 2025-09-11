@@ -27,6 +27,7 @@ import org.yaml.snakeyaml.representer.Representer
 import org.yaml.snakeyaml.introspector.Property
 import org.yaml.snakeyaml.nodes.MappingNode
 
+import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.SQLException
 import java.sql.Statement
@@ -36,6 +37,8 @@ import net.snowflake.client.jdbc.SnowflakeStatement
 @Slf4j
 @CompileStatic
 class SnowflakeTaskHandler extends TaskHandler {
+    private SnowflakeConnectionPool connectionPool
+    private Connection connection
     private Statement statement
     private ResultSet resultSet
     private SnowflakeExecutor executor
@@ -76,10 +79,10 @@ class SnowflakeTaskHandler extends TaskHandler {
         return new Yaml(representer, dumperOptions)
     }
 
-    SnowflakeTaskHandler(TaskRun taskRun, Statement statement, SnowflakeExecutor executor) {
+    SnowflakeTaskHandler(TaskRun taskRun, SnowflakeExecutor executor, SnowflakeConnectionPool connectionPool) {
         super(taskRun)
-        this.statement = statement
         this.executor = executor
+        this.connectionPool = connectionPool
         this.jobServiceName = normalizeTaskName(executor.session.runName, task.getId())
         validateConfiguration()
     }
@@ -106,11 +109,15 @@ class SnowflakeTaskHandler extends TaskHandler {
             task.exitStatus = 0
             task.stdout = tryGetStdout()
             this.status = TaskStatus.COMPLETED
+            this.connectionPool.returnConnection(this.connection)
+            this.connection = null
             return true
         } else if (queryStatus.isAnError()) {
             task.exitStatus = 1
             task.stdout = tryGetStdout()
             task.stderr = queryStatus.errorMessage
+            this.connectionPool.returnConnection(this.connection)
+            this.connection = null
             return true
         } else {
             return false
@@ -132,10 +139,15 @@ class SnowflakeTaskHandler extends TaskHandler {
     @Override
     void kill(){
         statement.cancel()
+        this.connectionPool.returnConnection(this.connection)
+        this.connection = null
     }
 
     @Override
     void submit(){
+        this.connection = this.connectionPool.getConnection()
+        this.statement = connection.createStatement()
+
         final TaskBean taskBean = new TaskBean(task)
         if (taskBean.scratch == null) {
             taskBean.scratch = scratchDir

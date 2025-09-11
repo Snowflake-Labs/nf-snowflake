@@ -21,11 +21,10 @@ class SnowflakeTaskHandlerTest extends Specification {
         def taskRun = createMockTaskRun([
             container: 'ubuntu:latest'
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -54,11 +53,10 @@ class SnowflakeTaskHandlerTest extends Specification {
             cpus: 4,
             memory: '8GB'
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -86,11 +84,10 @@ class SnowflakeTaskHandlerTest extends Specification {
             container: 'ubuntu:latest',
             cpus: 2
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -113,11 +110,10 @@ class SnowflakeTaskHandlerTest extends Specification {
             container: 'ubuntu:latest',
             memory: '4GB'
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -140,11 +136,10 @@ class SnowflakeTaskHandlerTest extends Specification {
             container: 'ubuntu:latest'
             // No cpus or memory specified
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -169,12 +164,11 @@ class SnowflakeTaskHandlerTest extends Specification {
         def taskRun = createMockTaskRun([
             container: 'ubuntu:latest'
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             stageMounts: 'stage1:/mnt/data,stage2:/mnt/output',
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -200,12 +194,11 @@ class SnowflakeTaskHandlerTest extends Specification {
         def taskRun = createMockTaskRun([
             container: 'ubuntu:latest'
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             stageMounts: 'invalid-mount,stage1:/valid/mount,another-invalid',
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -232,12 +225,11 @@ class SnowflakeTaskHandlerTest extends Specification {
             cpus: 2,
             memory: '1GB'
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             stageMounts: 'input-stage:/input',
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -273,11 +265,10 @@ class SnowflakeTaskHandlerTest extends Specification {
             container: 'ubuntu:latest'
         ])
         taskRun.getName() >> 'test-task.with#special$chars'
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -294,12 +285,11 @@ class SnowflakeTaskHandlerTest extends Specification {
         def taskRun = createMockTaskRun([
             container: 'ubuntu:latest'
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             stageMounts: null,
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
         def yamlSpec = handler.buildJobServiceSpec()
@@ -320,12 +310,11 @@ class SnowflakeTaskHandlerTest extends Specification {
             cpus: 8,
             memory: '16GB'
         ])
-        def statement = Mock(Statement)
         def executor = createMockExecutor([
             stageMounts: 'data-stage:/data,results-stage:/results,reference-stage:/reference',
             workDirStage: 'work-stage'
         ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, statement, executor)
+        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when: "Generating the job service specification"
         def yamlSpec = handler.buildJobServiceSpec()
@@ -425,8 +414,8 @@ ${yamlSpec}
     
     // Testable version of SnowflakeTaskHandler that makes buildJobServiceSpec accessible via reflection
     private static class TestableSnowflakeTaskHandler extends SnowflakeTaskHandler {
-        TestableSnowflakeTaskHandler(TaskRun taskRun, Statement statement, SnowflakeExecutor executor) {
-            super(taskRun, statement, executor)
+        TestableSnowflakeTaskHandler(TaskRun taskRun, SnowflakeExecutor executor) {
+            super(taskRun, executor, null)
         }
         
         String buildJobServiceSpec() {
