@@ -1,6 +1,7 @@
 package nextflow.snowflake
 
 import java.nio.file.Path
+import java.nio.file.Paths
 
 import groovy.transform.CompileStatic
 import nextflow.Global
@@ -25,7 +26,12 @@ class SnowflakeCacheFactory extends CacheFactory {
     protected CacheDB newInstance(UUID uniqueId, String runName, Path home) {
         if( !uniqueId ) throw new AbortOperationException("Missing cache `uuid`")
         if( !runName ) throw new AbortOperationException("Missing cache `runName`")
-        final store = new SnowflakeCacheStore(uniqueId, runName)
+
+        // Make sure the cache path exists
+        final String basePath = Paths.get(System.getenv("SNOWFLAKE_CACHE_PATH"))
+        if ( !basePath) throw new AbortOperationException("Missing SNOWFLAKE_CACHE_PATH")
+
+        final store = new SnowflakeCacheStore(uniqueId, runName, Paths.get(basePath))
         return new CacheDB(store)
     }
 }

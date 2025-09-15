@@ -11,6 +11,6 @@ import nextflow.Session
 class SnowflakeObserverFactory implements TraceObserverFactory {
     @Override
     Collection<TraceObserver> create(Session session) {
-        return [new SnowflakeObserver(session)]
+        return [new SnowflakeObserver()]
     }
 }

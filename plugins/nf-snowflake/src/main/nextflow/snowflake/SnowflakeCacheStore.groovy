@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.StandardOpenOption
 
 import com.google.common.hash.HashCode
 import groovy.transform.CompileStatic
@@ -43,21 +44,22 @@ class SnowflakeCacheStore implements CacheStore {
     /** Index file output stream */
     private OutputStream indexWriter
 
-    SnowflakeCacheStore(UUID uniqueId, String runName) {
-        assert uniqueId, "Missing cloudcache 'uniqueId' argument"
-        assert runName, "Missing cloudcache 'runName' argument"
-        assert basePath, "Missing cloudcache 'basePath' argument"
+    SnowflakeCacheStore(UUID uniqueId, String runName, Path basePath) {
+        assert uniqueId, "Missing 'uniqueId' argument"
+        assert runName, "Missing 'runName' argument"
+        assert basePath, "Missing 'basePath' argument"
         this.KEY_SIZE = CacheHelper.hasher('x').hash().asBytes().size()
         this.uniqueId = uniqueId
         this.runName = runName
-        this.basePath = Paths.get(System.getenv("SNOWFLAKE_CACHE_PATH"))
+        this.basePath = basePath
         this.dataPath = this.basePath.resolve("$uniqueId")
         this.indexPath = dataPath.resolve("index.$runName")
+        Files.createDirectories(dataPath)
     }
 
     @Override
     SnowflakeCacheStore open() {
-        indexWriter = new BufferedOutputStream(Files.newOutputStream(indexPath))
+        indexWriter = new BufferedOutputStream(Files.newOutputStream(indexPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE))
         return this
     }
 
