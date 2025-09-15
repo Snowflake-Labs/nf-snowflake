@@ -4,7 +4,7 @@ FROM nextflow/nextflow:25.04.6
 ARG PLUGIN_VERSION=0.8.3
 
 # Create plugins directory
-RUN mkdir -p /.nextflow/plugins && nextflow plugin install nf-schema
+RUN mkdir -p /.nextflow/plugins
 
 # Copy the locally built plugin (recursively copy the entire directory)
 COPY build/plugins/nf-snowflake-${PLUGIN_VERSION}/ /.nextflow/plugins/nf-snowflake-${PLUGIN_VERSION}/

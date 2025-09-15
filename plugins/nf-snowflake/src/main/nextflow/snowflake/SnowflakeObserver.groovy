@@ -19,12 +19,14 @@ import java.util.UUID
 class SnowflakeObserver implements TraceObserver {
 
     private String currentRunId
-    
-    SnowflakeObserver(Session session) {
-    }
+
+    private Session session
+
+    SnowflakeObserver() {}
 
     @Override
     void onFlowCreate(Session session) {
+        this.session = session
         final Connection connection = SnowflakeConnectionPool.getInstance().getConnection()
         try {
             onFlowCreateImpl(session, connection)
@@ -96,7 +98,8 @@ class SnowflakeObserver implements TraceObserver {
     
     private void onFlowCompleteImpl(Connection connection) {
         final long endTime = System.currentTimeMillis()
-        
+
+        final String runStatus = session.isSuccess() ? 'SUCCESS' : 'ERROR'
         final String updateSql = """
             UPDATE nxf_execution_history 
             SET run_end_time = ?, run_status = ? 
@@ -106,7 +109,7 @@ class SnowflakeObserver implements TraceObserver {
         try {
             final PreparedStatement preparedStatement = connection.prepareStatement(updateSql)
             preparedStatement.setTimestamp(1, new Timestamp(endTime))
-            preparedStatement.setString(2, 'SUCCESS')
+            preparedStatement.setString(2, runStatus)
             preparedStatement.setString(3, currentRunId)
             
             int rowsUpdated = preparedStatement.executeUpdate()
@@ -117,50 +120,6 @@ class SnowflakeObserver implements TraceObserver {
             }
         } catch (SQLException e) {
             log.warn "Failed to update execution history with completion status: ${e.message}"
-        }
-    }
-    
-    @Override
-    void onFlowError(TaskHandler handler, TraceRecord trace) {
-        if (currentRunId == null) {
-            log.warn "No run ID found, skipping flow error tracking"
-            return
-        }
-        
-        final Connection connection = SnowflakeConnectionPool.getInstance().getConnection()
-        try {
-            onFlowErrorImpl(connection, handler, trace)
-        } finally {
-            SnowflakeConnectionPool.getInstance().returnConnection(connection)
-        }
-    }
-    
-    private void onFlowErrorImpl(Connection connection, TaskHandler handler, TraceRecord trace) {
-        final long endTime = System.currentTimeMillis()
-        
-        // Extract error information from trace if available
-        String errorMessage = trace?.get('error_action') ?: 'Unknown error'
-        
-        final String updateSql = """
-            UPDATE nxf_execution_history 
-            SET run_end_time = ?, run_status = ? 
-            WHERE run_id = ?
-        """
-        
-        try {
-            final PreparedStatement preparedStatement = connection.prepareStatement(updateSql)
-            preparedStatement.setTimestamp(1, new Timestamp(endTime))
-            preparedStatement.setString(2, 'ERROR')
-            preparedStatement.setString(3, currentRunId)
-            
-            int rowsUpdated = preparedStatement.executeUpdate()
-            if (rowsUpdated > 0) {
-                log.info "Updated execution history for run ID: ${currentRunId} with ERROR status"
-            } else {
-                log.warn "No rows updated for run ID: ${currentRunId}"
-            }
-        } catch (SQLException e) {
-            log.warn "Failed to update execution history with error status: ${e.message}"
         }
     }
 }

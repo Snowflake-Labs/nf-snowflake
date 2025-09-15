@@ -211,7 +211,7 @@ from specification
         final String workDirStageEnv = System.getenv("workDirStage")
         final String workDirStage = workDirStageEnv != null ? workDirStageEnv :
             executor.snowflakeConfig.get("workDirStage")
-        result.addWorkDirMount(workDir, String.format("%s/%s/", workDirStage, executor.session.runName))
+        result.addWorkDirMount(workDir, String.format("%s/", workDirStage))
 
         result.addLocalVolume(scratchDir)
 
