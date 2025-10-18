@@ -45,6 +45,7 @@ class SnowflakeTaskHandler extends TaskHandler {
     private String jobServiceName
     private static final String containerName = 'main'
     private static final String scratchDir = '/scratch'
+    private Map<String, String> registryMappings
     
     // Static YAML object for efficient reuse with custom representer
     private static final Yaml yaml = createYamlDumper()
@@ -79,11 +80,13 @@ class SnowflakeTaskHandler extends TaskHandler {
         return new Yaml(representer, dumperOptions)
     }
 
-    SnowflakeTaskHandler(TaskRun taskRun, SnowflakeExecutor executor, SnowflakeConnectionPool connectionPool) {
+    SnowflakeTaskHandler(TaskRun taskRun, SnowflakeExecutor executor, SnowflakeConnectionPool connectionPool,
+        Map<String, String> registryMappings) {
         super(taskRun)
         this.executor = executor
         this.connectionPool = connectionPool
         this.jobServiceName = normalizeTaskName(executor.session.runName, task.getId())
+        this.registryMappings = registryMappings
         validateConfiguration()
     }
 
@@ -185,11 +188,22 @@ from specification
         //TODO validate compute pool is specified
     }
 
+    private String applyRegistryMappings(String imageName) {
+        String[] parts = imageName.split('/', 2)
+
+        if (!registryMappings.containsKey(parts[0])) {
+            return imageName
+        }
+
+        return registryMappings.get(parts[0]) + '/' + parts[1]
+    }
+
+
     private String buildJobServiceSpec() {
         TaskConfig taskCfg = this.task.getConfig()
         Container container = new Container()
         container.name = containerName
-        container.image = task.container
+        container.image = applyRegistryMappings(task.container)
         container.command = classicSubmitCli(task)
 
         final cpu = taskCfg.getCpus()

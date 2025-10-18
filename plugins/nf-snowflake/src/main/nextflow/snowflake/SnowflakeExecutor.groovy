@@ -11,12 +11,9 @@ import nextflow.util.ServiceName
 import nextflow.util.Duration
 import org.pf4j.ExtensionPoint
 
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Paths
 import java.sql.Statement
 import java.sql.Connection
-import java.sql.DriverManager
+import java.sql.ResultSet
 
 @Slf4j
 @ServiceName('snowflake')
@@ -31,7 +28,33 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
 
     @Override
     TaskHandler createTaskHandler(TaskRun task) {
-        return new SnowflakeTaskHandler(task, this, SnowflakeConnectionPool.getInstance())
+        var registryMappings = buildRegistryMappings()
+
+        return new SnowflakeTaskHandler(task, this, SnowflakeConnectionPool.getInstance(), registryMappings)
+    }
+
+    private Map<String, String> buildRegistryMappings() {
+        Connection conn = SnowflakeConnectionPool.getInstance().getConnection();
+        Statement stmt = conn.createStatement();
+        final Map<String, String> registryMappings = new HashMap<>()
+
+        String mappings = snowflakeConfig.get("registryMappings", "")
+
+        for (String mapping : mappings.split(",")) {
+            String[] parts = mapping.split(":")
+            String original = parts[0].trim()
+            String replacement = parts[1].trim()
+
+            ResultSet resultSet = stmt.executeQuery("show image repositories like '$replacement'")
+            boolean hasNext = resultSet.next()
+
+            if (hasNext) {
+                String repoUrl = resultSet.getString("repository_url")
+                registryMappings.put(original, repoUrl)
+            }
+        }
+
+        return registryMappings
     }
 
     /**
