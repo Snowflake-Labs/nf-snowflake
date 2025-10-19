@@ -415,7 +415,7 @@ ${yamlSpec}
     // Testable version of SnowflakeTaskHandler that makes buildJobServiceSpec accessible via reflection
     private static class TestableSnowflakeTaskHandler extends SnowflakeTaskHandler {
         TestableSnowflakeTaskHandler(TaskRun taskRun, SnowflakeExecutor executor) {
-            super(taskRun, executor, null)
+            super(taskRun, executor, null, Map.of() as Map<String, String>)
         }
         
         String buildJobServiceSpec() {
