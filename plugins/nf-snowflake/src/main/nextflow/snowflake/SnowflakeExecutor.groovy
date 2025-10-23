@@ -39,6 +39,9 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
         final Map<String, String> registryMappings = new HashMap<>()
 
         String mappings = snowflakeConfig.get("registryMappings", "")
+        if (mappings.isEmpty()) {
+            return registryMappings
+        }
 
         for (String mapping : mappings.split(",")) {
             String[] parts = mapping.split(":")
