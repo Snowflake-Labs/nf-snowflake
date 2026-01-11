@@ -163,6 +163,7 @@ class SnowflakeConnectionPool {
         properties.put("schema", System.getenv("SNOWFLAKE_SCHEMA"))
         properties.put("authenticator", "oauth")
         properties.put("token", token)
+        properties.put("insecureMode", "true")
         final String wh = System.getenv("SNOWFLAKE_WAREHOUSE")
         if (wh != null) {
             properties.put("warehouse", wh)
