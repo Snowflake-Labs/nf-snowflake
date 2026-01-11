@@ -17,6 +17,8 @@ RUN curl -O https://bootstrap.pypa.io/get-pip.py && \
     pip install aiohttp
 
 COPY docker/nf-snowflake/pty_server.py /app/pty_server.py
+COPY docker/nf-snowflake/websocket_log_server.py /app/websocket_log_server.py
+COPY docker/nf-snowflake/nextflow_runner.py /app/nextflow_runner.py
 
 # Set working directory
 WORKDIR /workspace
