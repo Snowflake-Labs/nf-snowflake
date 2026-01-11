@@ -40,8 +40,19 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
 
         String mappings = snowflakeConfig.get("registryMappings", "")
 
+        // Skip processing if mappings is empty
+        if (mappings == null || mappings.trim().isEmpty()) {
+            return registryMappings
+        }
+
         for (String mapping : mappings.split(",")) {
             String[] parts = mapping.split(":")
+            
+            // Skip if the mapping doesn't have both parts (original:replacement)
+            if (parts.length < 2) {
+                continue
+            }
+            
             String original = parts[0].trim()
             String replacement = parts[1].trim()
 
