@@ -27,11 +27,11 @@ class SnowflakeCacheFactory extends CacheFactory {
         if( !uniqueId ) throw new AbortOperationException("Missing cache `uuid`")
         if( !runName ) throw new AbortOperationException("Missing cache `runName`")
 
-        // Make sure the cache path exists
-        final String basePath = Paths.get(System.getenv("SNOWFLAKE_CACHE_PATH"))
-        if ( !basePath) throw new AbortOperationException("Missing SNOWFLAKE_CACHE_PATH")
+        // Defer validation of SNOWFLAKE_CACHE_PATH until the cache is actually used
+        final String cachePathEnv = System.getenv("SNOWFLAKE_CACHE_PATH")
+        final Path basePath = cachePathEnv ? Paths.get(cachePathEnv) : null
 
-        final store = new SnowflakeCacheStore(uniqueId, runName, Paths.get(basePath))
+        final store = new SnowflakeCacheStore(uniqueId, runName, basePath)
         return new CacheDB(store)
     }
 }
