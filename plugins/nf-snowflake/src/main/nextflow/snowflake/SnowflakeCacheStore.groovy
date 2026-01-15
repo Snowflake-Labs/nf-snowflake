@@ -47,24 +47,37 @@ class SnowflakeCacheStore implements CacheStore {
     SnowflakeCacheStore(UUID uniqueId, String runName, Path basePath) {
         assert uniqueId, "Missing 'uniqueId' argument"
         assert runName, "Missing 'runName' argument"
-        assert basePath, "Missing 'basePath' argument"
+        // Allow null basePath - it will be validated when cache operations are performed
         this.KEY_SIZE = CacheHelper.hasher('x').hash().asBytes().size()
         this.uniqueId = uniqueId
         this.runName = runName
         this.basePath = basePath
-        this.dataPath = this.basePath.resolve("$uniqueId")
-        this.indexPath = dataPath.resolve("index.$runName")
+        if( basePath ) {
+            this.dataPath = this.basePath.resolve("$uniqueId")
+            this.indexPath = dataPath.resolve("index.$runName")
+        }
+    }
+
+    private void ensureCacheInitialized() {
+        if( !basePath )
+            throw new AbortOperationException("Missing SNOWFLAKE_CACHE_PATH environment variable")
+        if( !dataPath ) {
+            this.dataPath = this.basePath.resolve("$uniqueId")
+            this.indexPath = dataPath.resolve("index.$runName")
+        }
         Files.createDirectories(dataPath)
     }
 
     @Override
     SnowflakeCacheStore open() {
+        ensureCacheInitialized()
         indexWriter = new BufferedOutputStream(Files.newOutputStream(indexPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE))
         return this
     }
 
     @Override
     SnowflakeCacheStore openForRead() {
+        ensureCacheInitialized()
         if( !dataPath.exists() )
             throw new AbortOperationException("Missing cache directory: $dataPath")
         indexReader = Files.newInputStream(indexPath)
@@ -73,6 +86,7 @@ class SnowflakeCacheStore implements CacheStore {
 
     @Override
     void drop() {
+        ensureCacheInitialized()
         dataPath.deleteDir()
     }
 
