@@ -170,7 +170,7 @@ class NextflowLogServer:
         logger.info(f"Starting log streaming from {self.log_file}")
         
         # Wait for log file to exist (with timeout)
-        wait_timeout = 60  # seconds
+        wait_timeout = 300  # seconds
         wait_start = time.time()
         while not os.path.exists(self.log_file):
             if time.time() - wait_start > wait_timeout:
