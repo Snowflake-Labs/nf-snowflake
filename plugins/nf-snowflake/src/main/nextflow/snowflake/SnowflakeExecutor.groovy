@@ -96,8 +96,6 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
             // Create target directory
             Files.createDirectories(targetDir)
             
-            log.info "Copying local `bin` scripts to ${targetDir}"
-            
             // Copy all files from bin directory using standard file I/O
             Files.list(session.binDir).forEach { Path source ->
                 final Path target = targetDir.resolve(source.getFileName())
