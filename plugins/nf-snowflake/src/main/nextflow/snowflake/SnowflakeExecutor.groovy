@@ -11,6 +11,10 @@ import nextflow.util.ServiceName
 import nextflow.util.Duration
 import org.pf4j.ExtensionPoint
 
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.sql.Statement
 import java.sql.Connection
 import java.sql.ResultSet
@@ -20,6 +24,11 @@ import java.sql.ResultSet
 @CompileStatic
 class SnowflakeExecutor extends Executor implements ExtensionPoint {
     Map snowflakeConfig
+    
+    /**
+     * A path where executable scripts from bin directory are copied
+     */
+    private Path remoteBinDir = null
 
     @Override
     protected TaskMonitor createTaskMonitor() {
@@ -69,12 +78,42 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
     }
 
     /**
+     * @return The remote bin directory path
+     */
+    Path getRemoteBinDir() {
+        remoteBinDir
+    }
+
+    /**
+     * Copy local bin directory to remote mounted workdir
+     */
+    protected void uploadBinDir() {
+        if( session.binDir && !session.binDir.empty() && !session.disableRemoteBinDir ) {
+            // Use session run name for directory isolation
+            final String runId = session.runName
+            final Path targetDir = Paths.get("/mnt/workdir", runId, "bin")
+            
+            // Create target directory
+            Files.createDirectories(targetDir)
+            
+            // Copy all files from bin directory using standard file I/O
+            Files.list(session.binDir).forEach { Path source ->
+                final Path target = targetDir.resolve(source.getFileName())
+                Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
+            }
+            
+            remoteBinDir = targetDir
+        }
+    }
+
+    /**
      * Initialise Snowflake executor.
      */
     @Override
     protected void register() {
         super.register()
         snowflakeConfig = session.config.navigate("snowflake") as Map
+        uploadBinDir()
     }
 
     @Override
