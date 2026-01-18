@@ -155,7 +155,8 @@ class SnowflakeTaskHandler extends TaskHandler {
         if (taskBean.scratch == null) {
             taskBean.scratch = scratchDir
         }
-        final BashWrapperBuilder builder = new BashWrapperBuilder(taskBean)
+        final SnowflakeFileCopyStrategy fileCopyStrategy = new SnowflakeFileCopyStrategy(taskBean, executor)
+        final BashWrapperBuilder builder = new BashWrapperBuilder(taskBean, fileCopyStrategy)
         builder.build()
 
         final String spec = buildJobServiceSpec()
