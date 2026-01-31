@@ -147,6 +147,11 @@ class SnowflakeTaskHandler extends TaskHandler {
     }
 
     @Override
+    void killTask(){
+        kill()
+    }
+
+    @Override
     void submit(){
         this.connection = this.connectionPool.getConnection()
         this.statement = connection.createStatement()
