@@ -1,3 +1,5 @@
 nextflow.snowflake.SnowflakeCacheFactory
 nextflow.snowflake.SnowflakeExecutor
 nextflow.snowflake.SnowflakeObserverFactory
+nextflow.snowflake.SnowflakePathFactory
+nextflow.snowflake.nio.SnowflakePathSerializer

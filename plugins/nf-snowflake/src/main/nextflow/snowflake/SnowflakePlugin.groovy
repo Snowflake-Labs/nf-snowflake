@@ -17,14 +17,19 @@
 package nextflow.snowflake
 
 import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
+import nextflow.file.FileHelper
 import nextflow.plugin.BasePlugin
+import nextflow.snowflake.nio.SnowflakeFileSystemProvider
 import org.pf4j.PluginWrapper
 
 /**
- * Implements the Hello plugins entry point
+ * Nextflow plugin for Snowflake extensions
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
+ * @author Hongye Yu
  */
+@Slf4j
 @CompileStatic
 class SnowflakePlugin extends BasePlugin {
 
@@ -39,5 +44,8 @@ class SnowflakePlugin extends BasePlugin {
         // Configure Snowflake JDBC to use SLF4J instead of java.util.logging
         // This redirects Snowflake JDBC logs to Nextflow's logging system
         System.setProperty('net.snowflake.jdbc.loggerImpl', 'net.snowflake.client.log.SLF4JLogger')
+
+        // Register the Snowflake FileSystemProvider
+        FileHelper.getOrInstallProvider(SnowflakeFileSystemProvider)
     }
 }

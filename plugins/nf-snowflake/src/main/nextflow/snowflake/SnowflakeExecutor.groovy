@@ -85,24 +85,31 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
     }
 
     /**
-     * Copy local bin directory to remote mounted workdir
+     * Copy local bin directory to Snowflake stage
      */
     protected void uploadBinDir() {
         if( session.binDir && !session.binDir.empty() && !session.disableRemoteBinDir ) {
             // Use session run name for directory isolation
             final String runId = session.runName
-            final Path targetDir = Paths.get("/mnt/workdir", runId, "bin")
-            
-            // Create target directory
+            final Path workDirPath = session.workDir
+
+            log.debug("Uploading bin directory to Snowflake stage: ${workDirPath.toUriString()}")
+
+            // Upload to snowflake://stage/STAGE_NAME/<runId>/bin
+            final Path targetDir = workDirPath.resolve(runId).resolve("bin")
+
+            // Create target directory (implicit in Snowflake)
             Files.createDirectories(targetDir)
-            
-            // Copy all files from bin directory using standard file I/O
+
+            // Copy all files from bin directory to stage
             Files.list(session.binDir).forEach { Path source ->
                 final Path target = targetDir.resolve(source.getFileName())
                 Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
+                log.debug("Uploaded bin file: ${source.getFileName()} -> ${target.toUriString()}")
             }
-            
+
             remoteBinDir = targetDir
+            log.debug("Bin directory uploaded to: ${targetDir.toUriString()}")
         }
     }
 
@@ -113,7 +120,38 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
     protected void register() {
         super.register()
         snowflakeConfig = session.config.navigate("snowflake") as Map
+
+        // Validate that workDir uses snowflake:// scheme
+        validateWorkDir()
+
         uploadBinDir()
+    }
+
+    /**
+     * Validate that the work directory uses the snowflake:// scheme
+     * @throws IllegalArgumentException if workDir doesn't use snowflake:// scheme
+     */
+    private void validateWorkDir() {
+        final Path workDirPath = session.workDir
+        if (!workDirPath) {
+            throw new IllegalArgumentException(
+                "Work directory is not configured. " +
+                "For Snowflake executor, you must specify a work directory using the snowflake:// scheme, " +
+                "e.g., workDir = 'snowflake://stage/MY_STAGE/work'"
+            )
+        }
+
+        final String workDirStr = workDirPath.toUriString()
+        if (!SnowflakeUri.isSnowflakeStageUri(workDirStr)) {
+            throw new IllegalArgumentException(
+                "Invalid work directory for Snowflake executor: ${workDirStr}\n" +
+                "The work directory must use the snowflake:// scheme pointing to a Snowflake internal stage.\n" +
+                "Example: workDir = 'snowflake://stage/MY_STAGE/work'\n" +
+                "Current workDir: ${workDirStr}"
+            )
+        }
+
+        log.debug("Using Snowflake stage as work directory: ${workDirStr}")
     }
 
     @Override
