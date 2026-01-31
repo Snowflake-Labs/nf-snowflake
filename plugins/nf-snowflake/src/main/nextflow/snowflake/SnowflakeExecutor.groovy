@@ -32,7 +32,7 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
 
     @Override
     protected TaskMonitor createTaskMonitor() {
-        TaskPollingMonitor.create(session, name, 1000, Duration.of('10 sec'))
+        TaskPollingMonitor.create(session, config, name, Duration.of('10 sec'))
     }
 
     @Override

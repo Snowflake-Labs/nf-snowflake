@@ -50,7 +50,7 @@ sourceSets {
 }
 
 ext{
-    nextflowVersion = '24.04.6'
+    nextflowVersion = '25.10.3'
 }
 
 dependencies {
@@ -58,8 +58,9 @@ dependencies {
     compileOnly "io.nextflow:nextflow:$nextflowVersion"
     compileOnly 'org.slf4j:slf4j-api:1.7.10'
     compileOnly 'org.pf4j:pf4j:3.4.1'
+    compileOnly 'org.apache.groovy:groovy:4.0.18'
     // add here plugins depepencies
-    implementation 'net.snowflake:snowflake-jdbc:3.16.0'
+    implementation 'net.snowflake:snowflake-jdbc:3.28.0'
     implementation 'org.yaml:snakeyaml:2.2'
 
     // test configuration

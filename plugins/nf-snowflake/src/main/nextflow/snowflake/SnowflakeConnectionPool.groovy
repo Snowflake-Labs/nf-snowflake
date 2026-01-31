@@ -155,23 +155,32 @@ class SnowflakeConnectionPool {
      * Create a raw database connection
      */
     private Connection createRawConnection() {
-        final String token = new String(Files.readAllBytes(Paths.get("/snowflake/session/token")), StandardCharsets.UTF_8)
+        final java.nio.file.Path tokenPath = Paths.get("/snowflake/session/token")
 
-        final Properties properties = new Properties()
-        properties.put("account", System.getenv("SNOWFLAKE_ACCOUNT"))
-        properties.put("database", System.getenv("SNOWFLAKE_DATABASE"))
-        properties.put("schema", System.getenv("SNOWFLAKE_SCHEMA"))
-        properties.put("authenticator", "oauth")
-        properties.put("token", token)
-        properties.put("insecureMode", "true")
-        final String wh = System.getenv("SNOWFLAKE_WAREHOUSE")
-        if (wh != null) {
-            properties.put("warehouse", wh)
+        // If token file exists, use token-based authentication
+        if (Files.exists(tokenPath)) {
+            log.debug("Using token-based authentication from /snowflake/session/token")
+            final String token = new String(Files.readAllBytes(tokenPath), StandardCharsets.UTF_8)
+
+            final Properties properties = new Properties()
+            properties.put("account", System.getenv("SNOWFLAKE_ACCOUNT"))
+            properties.put("database", System.getenv("SNOWFLAKE_DATABASE"))
+            properties.put("schema", System.getenv("SNOWFLAKE_SCHEMA"))
+            properties.put("authenticator", "oauth")
+            properties.put("token", token)
+            properties.put("insecureMode", "true")
+            final String wh = System.getenv("SNOWFLAKE_WAREHOUSE")
+            if (wh != null) {
+                properties.put("warehouse", wh)
+            }
+
+            return DriverManager.getConnection(
+                    String.format("jdbc:snowflake://%s", System.getenv("SNOWFLAKE_HOST")),
+                    properties)
+        } else {
+            // Fall back to connections.toml via jdbc:snowflake:auto
+            return DriverManager.getConnection("jdbc:snowflake:auto")
         }
-
-        return DriverManager.getConnection(
-                String.format("jdbc:snowflake://%s", System.getenv("SNOWFLAKE_HOST")),
-                properties)
     }
 
     /**
