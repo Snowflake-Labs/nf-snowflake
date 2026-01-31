@@ -17,18 +17,32 @@
 package nextflow.snowflake
 
 import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
+import nextflow.file.FileHelper
 import nextflow.plugin.BasePlugin
+import nextflow.snowflake.nio.SnowflakeFileSystemProvider
 import org.pf4j.PluginWrapper
 
 /**
- * Implements the Hello plugins entry point
+ * Nextflow plugin for Snowflake extensions
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
+ * @author Hongye Yu
  */
+@Slf4j
 @CompileStatic
 class SnowflakePlugin extends BasePlugin {
 
     SnowflakePlugin(PluginWrapper wrapper) {
         super(wrapper)
+    }
+
+    @Override
+    void start() {
+        super.start()
+        log.debug("Starting Snowflake plugin - registering FileSystemProvider")
+        // Register the Snowflake FileSystemProvider
+        FileHelper.getOrInstallProvider(SnowflakeFileSystemProvider)
+        log.info("Snowflake FileSystemProvider registered successfully")
     }
 }

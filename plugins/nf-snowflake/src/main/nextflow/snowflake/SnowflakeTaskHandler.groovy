@@ -31,6 +31,7 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.SQLException
 import java.sql.Statement
+import java.nio.file.Path
 
 import net.snowflake.client.jdbc.SnowflakeStatement
 
@@ -156,12 +157,16 @@ class SnowflakeTaskHandler extends TaskHandler {
         this.connection = this.connectionPool.getConnection()
         this.statement = connection.createStatement()
 
+        // Create TaskBean and set defaults
         final TaskBean taskBean = new TaskBean(task)
         if (taskBean.scratch == null) {
             taskBean.scratch = scratchDir
         }
-        final SnowflakeFileCopyStrategy fileCopyStrategy = new SnowflakeFileCopyStrategy(taskBean, executor)
-        final BashWrapperBuilder builder = new BashWrapperBuilder(taskBean, fileCopyStrategy)
+        
+        // Use factory method to create wrapper builder (follows Fusion pattern)
+        // This will translate snowflake:// paths to container mount paths
+        // and create the SnowflakeFileCopyStrategy with bin directory support
+        final SnowflakeWrapperBuilder builder = SnowflakeWrapperBuilder.create(taskBean, executor)
         builder.build()
 
         final String spec = buildJobServiceSpec()
@@ -228,10 +233,31 @@ from specification
 
         final String workDir = executor.getWorkDir().toUriString()
 
-        final String workDirStageEnv = System.getenv("workDirStage")
-        final String workDirStage = workDirStageEnv != null ? workDirStageEnv :
-            executor.snowflakeConfig.get("workDirStage")
-        result.addWorkDirMount(workDir, String.format("%s/", workDirStage))
+        // Check if workDir uses snowflake:// scheme
+        if (workDir.startsWith("snowflake://stage/")) {
+            // Extract stage name from snowflake://stage/<stage_name>/...
+            URI workDirUri = new URI(workDir)
+            String fullPath = workDirUri.path
+            if (fullPath.startsWith('/')) {
+                fullPath = fullPath.substring(1)
+            }
+            int firstSlash = fullPath.indexOf('/')
+            String stageName = firstSlash == -1 ? fullPath : fullPath.substring(0, firstSlash)
+            
+            // Mount the stage to /mnt/stage/<lowercase_stage_name>
+            String mountPath = "/mnt/stage/${stageName.toLowerCase()}"
+            result.addWorkDirMount(mountPath, stageName)
+            
+            log.debug("Mounting Snowflake stage @${stageName} to ${mountPath}")
+        } else {
+            // Legacy behavior: use workDirStage config
+            final String workDirStageEnv = System.getenv("workDirStage")
+            final String workDirStage = workDirStageEnv != null ? workDirStageEnv :
+                executor.snowflakeConfig.get("workDirStage")
+            if (workDirStage) {
+                result.addWorkDirMount(workDir, String.format("%s/", workDirStage))
+            }
+        }
 
         result.addLocalVolume(scratchDir)
 
@@ -310,9 +336,13 @@ from specification
        return String.format("NXF_TASK_%s_%s", sessionRunName, taskId.toString())
     }
 
-    private static List<String> classicSubmitCli(TaskRun task) {
+    private List<String> classicSubmitCli(TaskRun task) {
         final result = new ArrayList(BashWrapperBuilder.BASH)
-        result.add("${Escape.path(task.workDir)}/${TaskRun.CMD_RUN}".toString())
+        
+        // Translate workDir if it's a snowflake:// path
+        String workDirPath = SnowflakePathHelper.translateSnowflakePathToMount(task.workDir)
+        result.add("${Escape.path(workDirPath)}/${TaskRun.CMD_RUN}".toString())
+        
         return result
     }
 }

@@ -10,6 +10,7 @@ import nextflow.exception.AbortOperationException
 import nextflow.plugin.Priority
 import nextflow.cache.CacheDB
 import nextflow.cache.CacheFactory
+import nextflow.cache.DefaultCacheStore
 
 /**
  * Implements the cloud cache factory
@@ -27,11 +28,17 @@ class SnowflakeCacheFactory extends CacheFactory {
         if( !uniqueId ) throw new AbortOperationException("Missing cache `uuid`")
         if( !runName ) throw new AbortOperationException("Missing cache `runName`")
 
-        // Defer validation of SNOWFLAKE_CACHE_PATH until the cache is actually used
+        // Use SNOWFLAKE_CACHE_PATH if set, otherwise fall back to DefaultCacheStore
         final String cachePathEnv = System.getenv("SNOWFLAKE_CACHE_PATH")
-        final Path basePath = cachePathEnv ? Paths.get(cachePathEnv) : null
 
-        final store = new SnowflakeCacheStore(uniqueId, runName, basePath)
-        return new CacheDB(store)
+        if( cachePathEnv ) {
+            final Path basePath = Paths.get(cachePathEnv)
+            final store = new SnowflakeCacheStore(uniqueId, runName, basePath)
+            return new CacheDB(store)
+        }
+        else {
+            final store = new DefaultCacheStore(uniqueId, runName, home)
+            return new CacheDB(store)
+        }
     }
 }

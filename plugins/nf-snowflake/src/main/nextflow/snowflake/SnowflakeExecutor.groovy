@@ -91,15 +91,43 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
         if( session.binDir && !session.binDir.empty() && !session.disableRemoteBinDir ) {
             // Use session run name for directory isolation
             final String runId = session.runName
-            final Path targetDir = Paths.get("/mnt/workdir", runId, "bin")
             
-            // Create target directory
-            Files.createDirectories(targetDir)
+            // Check if workDir is a snowflake:// URI
+            final Path workDirPath = session.workDir
+            if (!workDirPath) {
+                log.warn("workDir is null, skipping bin directory upload")
+                return
+            }
             
-            // Copy all files from bin directory using standard file I/O
-            Files.list(session.binDir).forEach { Path source ->
-                final Path target = targetDir.resolve(source.getFileName())
-                Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
+            final String workDirStr = workDirPath.toUriString()
+            Path targetDir
+            
+            if (workDirStr.startsWith("snowflake://stage/")) {
+                log.debug("Using Snowflake stage for bin directory: ${workDirStr}")
+                // For snowflake:// URIs, use the FileSystemProvider to write to stage
+                targetDir = workDirPath.resolve(runId).resolve("bin")
+                
+                // Create target directory (implicit in Snowflake)
+                Files.createDirectories(targetDir)
+                
+                // Copy all files from bin directory
+                Files.list(session.binDir).forEach { Path source ->
+                    final Path target = targetDir.resolve(source.getFileName())
+                    Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
+                }
+            } else {
+                log.debug("Using local mount for bin directory: ${workDirStr}")
+                // Legacy behavior: use local mount path
+                targetDir = Paths.get("/mnt/workdir", runId, "bin")
+                
+                // Create target directory
+                Files.createDirectories(targetDir)
+                
+                // Copy all files from bin directory using standard file I/O
+                Files.list(session.binDir).forEach { Path source ->
+                    final Path target = targetDir.resolve(source.getFileName())
+                    Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
+                }
             }
             
             remoteBinDir = targetDir
