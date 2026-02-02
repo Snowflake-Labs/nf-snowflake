@@ -31,4 +31,13 @@ class SnowflakePlugin extends BasePlugin {
     SnowflakePlugin(PluginWrapper wrapper) {
         super(wrapper)
     }
+
+    @Override
+    void start() {
+        super.start()
+
+        // Configure Snowflake JDBC to use SLF4J instead of java.util.logging
+        // This redirects Snowflake JDBC logs to Nextflow's logging system
+        System.setProperty('net.snowflake.jdbc.loggerImpl', 'net.snowflake.client.log.SLF4JLogger')
+    }
 }
