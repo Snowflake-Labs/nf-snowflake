@@ -25,10 +25,9 @@ class SnowflakeStageClient {
 
     private final SnowflakeConnectionPool connectionPool
 
-    // Thread-safe date formatter for parsing Snowflake timestamps
-    // Format: "Sat, 31 Jan 2026 23:43:33 GMT"
-    private static final ThreadLocal<java.text.SimpleDateFormat> DATE_FORMAT =
-        ThreadLocal.withInitial(() -> new java.text.SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH))
+    // Use constant timestamp since Nextflow uses content-based caching (MD5), not timestamps
+    // This avoids SimpleDateFormat parsing and serialization issues
+    private static final long CONSTANT_TIMESTAMP = 0L
 
     SnowflakeStageClient(SnowflakeConnectionPool connectionPool) {
         this.connectionPool = connectionPool
@@ -199,13 +198,13 @@ class SnowflakeStageClient {
                     String name = rs.getString("name")
                     long size = rs.getLong("size")
                     String md5 = rs.getString("md5")
-                    java.sql.Timestamp lastModified = rs.getTimestamp("last_modified")
-                    
+                    // Skip timestamp parsing - use constant value for all files
+
                     results.add(new SnowflakeFileAttributes(
                         name: name,
                         size: size,
                         md5: md5,
-                        lastModified: lastModified ? lastModified.time : 0L
+                        lastModified: CONSTANT_TIMESTAMP
                     ))
                 }
                 
@@ -354,26 +353,13 @@ class SnowflakeStageClient {
                     String name = null
                     long size = 0
                     String md5 = null
-                    java.sql.Timestamp lastModified = null
 
                     try {
                         name = rs.getString("name")
                         log.debug("Got name: ${name}")
                         size = rs.getLong("size")
                         md5 = rs.getString("md5")
-
-                        // last_modified is returned as a string like "Sat, 31 Jan 2026 23:43:33 GMT"
-                        // Try to get as Timestamp first, if that fails, get as String and parse
-                        try {
-                            lastModified = rs.getTimestamp("last_modified")
-                        } catch (Exception e) {
-                            String timestampStr = rs.getString("last_modified")
-                            if (timestampStr) {
-                                // Parse the string format: "Sat, 31 Jan 2026 23:43:33 GMT"
-                                java.util.Date date = DATE_FORMAT.get().parse(timestampStr)
-                                lastModified = new java.sql.Timestamp(date.time)
-                            }
-                        }
+                        // Skip lastModified parsing - using constant timestamp
                     } catch (Exception e) {
                         log.error("Error reading result set columns: ${e.message}", e)
                         throw e
@@ -398,7 +384,7 @@ class SnowflakeStageClient {
                             name: dirName,
                             size: 0L,
                             md5: '',
-                            lastModified: lastModified ? lastModified.time : System.currentTimeMillis(),
+                            lastModified: CONSTANT_TIMESTAMP,
                             directory: true
                         )
                         log.debug("Returning directory attrs: name=${attrs.name}, isDirectory=${attrs.isDirectory()}")
@@ -411,7 +397,7 @@ class SnowflakeStageClient {
                         name: name,
                         size: size,
                         md5: md5,
-                        lastModified: lastModified ? lastModified.time : 0L
+                        lastModified: CONSTANT_TIMESTAMP
                     )
                 }
 
@@ -430,23 +416,12 @@ class SnowflakeStageClient {
                         // Return the requested path WITHOUT trailing slash, but set directory=true
                         String dirName = stagePath.endsWith('/') ? stagePath.substring(0, stagePath.length() - 1) : stagePath
 
-                        // Parse timestamp from string format
-                        java.sql.Timestamp lastModified = null
-                        try {
-                            lastModified = rs2.getTimestamp("last_modified")
-                        } catch (Exception e) {
-                            String timestampStr = rs2.getString("last_modified")
-                            if (timestampStr) {
-                                java.util.Date date = DATE_FORMAT.get().parse(timestampStr)
-                                lastModified = new java.sql.Timestamp(date.time)
-                            }
-                        }
-
+                        // Skip timestamp parsing - use constant value
                         return new SnowflakeFileAttributes(
                             name: dirName,
                             size: 0L,
                             md5: '',
-                            lastModified: lastModified ? lastModified.time : System.currentTimeMillis(),
+                            lastModified: CONSTANT_TIMESTAMP,
                             directory: true
                         )
                     }

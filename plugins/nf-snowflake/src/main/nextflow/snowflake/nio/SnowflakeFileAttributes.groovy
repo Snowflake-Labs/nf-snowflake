@@ -67,8 +67,9 @@ class SnowflakeFileAttributes implements BasicFileAttributes {
 
     @Override
     Object fileKey() {
-        // Use MD5 hash as file key
-        return md5
+        // Use full path as file key to ensure uniqueness
+        // MD5 is empty for directories, so we can't use it alone
+        return name ?: md5
     }
 
     @Override

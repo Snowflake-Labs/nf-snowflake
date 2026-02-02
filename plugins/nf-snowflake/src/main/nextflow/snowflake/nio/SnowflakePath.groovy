@@ -322,31 +322,55 @@ class SnowflakePath implements Path {
         if (!(other instanceof SnowflakePath)) {
             throw new IllegalArgumentException("Cannot relativize non-Snowflake path")
         }
-        
+
         SnowflakePath otherPath = (SnowflakePath) other
-        
-        if (stageName != otherPath.stageName) {
-            throw new IllegalArgumentException("Cannot relativize paths with different stage names")
+
+        // Allow relativization if one path has empty stageName (relative path)
+        // Only check if both have non-empty stage names
+        // Stage names are case-insensitive in Snowflake
+        if (stageName && otherPath.stageName && !stageName.equalsIgnoreCase(otherPath.stageName)) {
+            throw new IllegalArgumentException("Cannot relativize paths with different stage names: this=${stageName}, other=${otherPath.stageName}")
         }
-        
+
+        // If this path is empty, return the other path as relative
         if (!path) {
-            return new SnowflakePath(fileSystem, '', otherPath.path)
+            return new SnowflakePath(fileSystem, '', otherPath.path ?: '')
         }
-        
+
+        // If paths are equal, return empty relative path
+        if (path == otherPath.path) {
+            return new SnowflakePath(fileSystem, '', '')
+        }
+
+        // Check if other path starts with this path
         if (otherPath.path.startsWith(path + '/')) {
             String relativePath = otherPath.path.substring(path.length() + 1)
-            return new SnowflakePath(fileSystem, '', relativePath)
+            return new SnowflakePath(fileSystem, '', relativePath ?: '')
         }
-        
-        throw new IllegalArgumentException("Other path does not start with this path")
+
+        // Check if other path starts with this path (without trailing slash check)
+        // This handles the case where this.path = "foo" and otherPath.path = "foo"
+        if (otherPath.path.startsWith(path)) {
+            String suffix = otherPath.path.substring(path.length())
+            if (suffix.isEmpty()) {
+                return new SnowflakePath(fileSystem, '', '')
+            } else if (suffix.startsWith('/')) {
+                String result = suffix.substring(1)
+                return new SnowflakePath(fileSystem, '', result ?: '')
+            }
+        }
+
+        throw new IllegalArgumentException("Other path does not start with this path: this='${path}', other='${otherPath.path}'")
     }
 
     @Override
     URI toUri() {
         if (!stageName) {
-            throw new IllegalStateException("Cannot convert relative path to URI")
+            // For relative paths, return a file:// URI representation
+            // This allows Nextflow to handle them as local paths
+            return new File(path ?: '.').toURI()
         }
-        
+
         String uriPath = path ? "/${stageName}/${path}" : "/${stageName}"
         return new URI('snowflake', 'stage', uriPath, null, null)
     }

@@ -135,22 +135,49 @@ class SnowflakeFileSystemProvider extends FileSystemProvider {
     @Override
     DirectoryStream<Path> newDirectoryStream(Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
         SnowflakePath snowflakePath = toSnowflakePath(dir)
-        
+
         String stagePath = snowflakePath.toStageReference()
         List<SnowflakeFileAttributes> files = client.list(stagePath)
-        
-        List<Path> paths = files.collect { SnowflakeFileAttributes attrs ->
-            // Extract relative path from full stage path
+
+        // Extract immediate children only (not nested files in subdirectories)
+        Set<String> immediateChildren = new LinkedHashSet<>()
+        String dirPrefix = stagePath.endsWith('/') ? stagePath : stagePath + '/'
+        String normalizedPrefix = dirPrefix.toLowerCase()
+
+        files.each { SnowflakeFileAttributes attrs ->
             String fullPath = attrs.name
-            (Path) SnowflakePath.parse(snowflakePath.fileSystem as SnowflakeFileSystem, "snowflake://stage/${fullPath}" as String)
+            String normalizedFullPath = fullPath.toLowerCase()
+
+            // Remove the directory prefix to get relative path (case-insensitive)
+            if (normalizedFullPath.startsWith(normalizedPrefix)) {
+                // Extract relative path using original case
+                String relativePath = fullPath.substring(dirPrefix.length())
+
+                // Get immediate child (first path component)
+                int slashIndex = relativePath.indexOf('/')
+                if (slashIndex > 0) {
+                    // This is a file in a subdirectory - extract subdirectory name from original path
+                    String subdirName = relativePath.substring(0, slashIndex)
+                    // Construct full path with consistent case from original
+                    String subdirPath = fullPath.substring(0, dirPrefix.length() + slashIndex)
+                    immediateChildren.add(subdirPath)
+                } else if (relativePath && !relativePath.isEmpty()) {
+                    // This is an immediate child file
+                    immediateChildren.add(fullPath)
+                }
+            }
+        }
+
+        List<Path> paths = immediateChildren.collect { String childPath ->
+            (Path) SnowflakePath.parse(snowflakePath.fileSystem as SnowflakeFileSystem, "snowflake://stage/${childPath}" as String)
         }.findAll { Path p -> filter.accept(p) } as List<Path>
-        
+
         return new DirectoryStream<Path>() {
             @Override
             Iterator<Path> iterator() {
                 return paths.iterator()
             }
-            
+
             @Override
             void close() throws IOException {
                 // Nothing to close
