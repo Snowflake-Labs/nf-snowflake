@@ -40,9 +40,12 @@ class SnowflakePlugin extends BasePlugin {
     @Override
     void start() {
         super.start()
-        log.debug("Starting Snowflake plugin - registering FileSystemProvider")
+
+        // Configure Snowflake JDBC to use SLF4J instead of java.util.logging
+        // This redirects Snowflake JDBC logs to Nextflow's logging system
+        System.setProperty('net.snowflake.jdbc.loggerImpl', 'net.snowflake.client.log.SLF4JLogger')
+
         // Register the Snowflake FileSystemProvider
         FileHelper.getOrInstallProvider(SnowflakeFileSystemProvider)
-        log.info("Snowflake FileSystemProvider registered successfully")
     }
 }
