@@ -3,6 +3,7 @@ package nextflow.snowflake.nio
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.snowflake.SnowflakeConnectionPool
+import nextflow.util.ThreadPoolManager
 
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.AccessMode
@@ -37,12 +38,28 @@ import java.util.concurrent.ConcurrentHashMap
 class SnowflakeFileSystemProvider extends FileSystemProvider {
 
     private static final String SCHEME = 'snowflake'
-    
+
     private final Map<String, SnowflakeFileSystem> fileSystems = new ConcurrentHashMap<>()
     private final SnowflakeStageClient client
+    private java.util.concurrent.ExecutorService uploadExecutor
 
     SnowflakeFileSystemProvider() {
         this.client = new SnowflakeStageClient(SnowflakeConnectionPool.getInstance())
+    }
+
+    /**
+     * Lazily initialize the upload executor
+     * Called on first stream creation when session is guaranteed to exist
+     */
+    private synchronized void ensureExecutorInitialized() {
+        if (uploadExecutor != null) {
+            return
+        }
+
+        // Use Nextflow's ThreadPoolManager for proper lifecycle management
+        // ThreadPoolManager automatically registers shutdown callbacks with the session
+        uploadExecutor = ThreadPoolManager.create('snowflake-upload')
+        log.debug("Created Snowflake upload thread pool using ThreadPoolManager")
     }
 
     @Override
@@ -120,7 +137,10 @@ class SnowflakeFileSystemProvider extends FileSystemProvider {
             }
         }
 
-        return new SnowflakeStageOutputStream(client, snowflakePath)
+        // Lazily initialize executor when first stream is created
+        ensureExecutorInitialized()
+
+        return new SnowflakeStageOutputStream(client, snowflakePath, uploadExecutor)
     }
 
     @Override

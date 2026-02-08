@@ -3,10 +3,15 @@ package nextflow.snowflake.nio
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 
+import java.util.concurrent.Future
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.ExecutorService
+
 /**
  * OutputStream implementation for writing to Snowflake stages
- * 
- * Buffers data to a temporary file, then uploads to stage on close()
+ *
+ * Uses piped streams to enable streaming uploads without buffering entire content in memory.
+ * Data written to this stream is immediately available to the background upload thread.
  *
  * @author Hongye Yu
  */
@@ -16,45 +21,66 @@ class SnowflakeStageOutputStream extends OutputStream {
 
     private final SnowflakeStageClient client
     private final SnowflakePath path
-    private OutputStream delegate
-    private File tempFile
+    private final PipedOutputStream pipedOutput
+    private final PipedInputStream pipedInput
+    private final Future<Long> uploadFuture
     private boolean closed = false
 
-    SnowflakeStageOutputStream(SnowflakeStageClient client, SnowflakePath path) {
+    SnowflakeStageOutputStream(SnowflakeStageClient client, SnowflakePath path, ExecutorService executor) {
         this.client = client
         this.path = path
-        initialize()
-    }
 
-    private void initialize() throws IOException {
-        // Create temp file for buffering
-        tempFile = File.createTempFile("snowflake-upload-", ".tmp")
-        delegate = new FileOutputStream(tempFile)
-        log.debug("Initialized OutputStream for ${path}")
+        // Create piped streams with 64KB buffer (default is 1KB which is too small)
+        this.pipedInput = new PipedInputStream(64 * 1024)
+        this.pipedOutput = new PipedOutputStream(pipedInput)
+
+        // Start async upload immediately
+        this.uploadFuture = executor.submit(new java.util.concurrent.Callable<Long>() {
+            @Override
+            Long call() throws Exception {
+                try {
+                    log.debug("Background upload started for ${path}")
+                    client.upload(path, pipedInput, -1L) // -1 means size unknown
+                    long bytesRead = 0
+                    // Note: we can't track exact bytes read without wrapping the stream
+                    log.debug("Background upload completed for ${path}")
+                    return bytesRead
+                } catch (Exception e) {
+                    log.error("Background upload failed for ${path}", e)
+                    throw e
+                } finally {
+                    try {
+                        pipedInput.close()
+                    } catch (IOException ignored) {}
+                }
+            }
+        })
+
+        log.debug("Initialized streaming OutputStream for ${path}")
     }
 
     @Override
     void write(int b) throws IOException {
         checkClosed()
-        delegate.write(b)
+        pipedOutput.write(b)
     }
 
     @Override
     void write(byte[] b) throws IOException {
         checkClosed()
-        delegate.write(b)
+        pipedOutput.write(b)
     }
 
     @Override
     void write(byte[] b, int off, int len) throws IOException {
         checkClosed()
-        delegate.write(b, off, len)
+        pipedOutput.write(b, off, len)
     }
 
     @Override
     void flush() throws IOException {
         checkClosed()
-        delegate.flush()
+        pipedOutput.flush()
     }
 
     @Override
@@ -62,25 +88,21 @@ class SnowflakeStageOutputStream extends OutputStream {
         if (closed) {
             return
         }
-        
+
         closed = true
-        
+
+        // Close the output pipe to signal EOF to the upload thread
+        pipedOutput.close()
+
+        // Wait for upload to complete
         try {
-            // Flush and close the delegate stream
-            delegate.flush()
-            delegate.close()
-            
-            // Upload the temp file to the stage
-            tempFile.withInputStream { input ->
-                client.upload(path, input, tempFile.length())
-            }
-            
+            Long bytesUploaded = uploadFuture.get()
             log.debug("Successfully uploaded to ${path}")
-        } finally {
-            // Clean up temp file
-            if (tempFile != null) {
-                tempFile.delete()
-            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt()
+            throw new IOException("Upload interrupted for ${path}", e)
+        } catch (ExecutionException e) {
+            throw new IOException("Upload failed for ${path}: ${e.cause?.message}", e.cause)
         }
     }
 
