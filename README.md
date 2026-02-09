@@ -18,11 +18,9 @@ INSTANCE_FAMILY = CPU_X64_M
 auto_suspend_secs=3600
 ;
 ```
-2. Create External Access Integration to allow cloud blob storage service access. You can follow the steps [here](https://docs.snowflake.com/en/developer-guide/snowpark-container-services/additional-considerations-services-jobs#network-egress).
-3. Create Snowflake Internal Stage for working directory and publish directory
+2. Create Snowflake Internal Stage for working directory
 ```
-create or replace stage nxf_runtime encryption=(type = 'SNOWFLAKE_SSE');
-create or replace stage results_st encryption=(type = 'SNOWFLAKE_SSE');
+create or replace stage nxf_workdir encryption=(type = 'SNOWFLAKE_SSE');
 ```
 4. Build the container image for each Nextflow [process](https://www.nextflow.io/docs/latest/process.html), upload the image to [Snowflake Image Registry](https://docs.snowflake.com/en/developer-guide/snowpark-container-services/working-with-registry-repository) and update the each process's [container](https://www.nextflow.io/docs/latest/reference/process.html#process-container) field.
 e.g.
@@ -47,61 +45,18 @@ process INDEX {
 ```
 ...
 plugins {
-  id 'nf-snowflake@0.6.0'
+  id 'nf-snowflake@1.0.0'
 }
 ...
   snowflake {
     process.executor = 'snowflake'
     snowflake {
       computePool = 'CP'
-      stageMounts = 'INPUT:/mnt/input,OUTPUT:/mnt/output'
-      externalAccessIntegrations='EAI'
-      workDirStage = 'WORKDIR_STAGE'
     }
   }
 ...
 ```
-6. Build the container image for Nextflow main process, you will need to include nf-snowflake plugin. You might consider include your Nextflow pipeline code as well. Here is a sample Dockerfile:
+6. Run nextflow pipeline with snowflake's Snowpark Container Service
 ```
-FROM nextflow/nextflow:24.04.1
-
-RUN nextflow plugin install nf-snowflake
-COPY . /rnaseq-nf
-WORKDIR /rnaseq-nf
-```
-7. Start the container service to trigger the pipeline:
-```
-execute job service
-in compute pool CP
-name = NXF_MAIN
-EXTERNAL_ACCESS_INTEGRATIONS=(EAI)
-from specification '
-spec:
-  container:
-  - name: main
-    image: /db/schena/repo/nf-main:1.0
-    command:
-    - nextflow
-    - run
-    - .
-    - -profile
-    - snowflake
-    - -work-dir
-    - /mnt/workdir
-    volumeMounts:
-    - name: input
-      mountPath: /mnt/input
-    - name: output
-      mountPath: /mnt/output
-    - name: workDir
-      mountPath: /mnt/workdir
-  volumes:
-  - name: input
-    source: "@input"
-  - name: output
-    source: "@output"
-  - name: workDir
-    source: "@workdir"
-'
-;
+nextflow run . -profile snowflake -work-dir snowflake://stage/NXF_WORKDIR/
 ```

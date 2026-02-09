@@ -175,7 +175,6 @@ class SnowflakeTaskHandler extends TaskHandler {
         final String spec = buildJobServiceSpec()
         final String computePoolEnv = System.getenv("computePool")
         final String defaultComputePool = computePoolEnv!=null ? computePoolEnv : executor.snowflakeConfig.get("computePool")
-        final String eai = executor.snowflakeConfig.getOrDefault("externalAccessIntegrations", "")
         final String jobComment = String.format("nextflow task name: %s", task.getName())
 
         String executeSql = String.format("""
@@ -183,12 +182,11 @@ execute job service
 in compute pool %s
 name = %s
 comment = '%s'
-external_access_integrations=(%s)
 from specification
 \$\$
 %s
 \$\$
-""", defaultComputePool, jobServiceName, jobComment, eai, spec)
+""", defaultComputePool, jobServiceName, jobComment, spec)
 
         resultSet = statement.unwrap(SnowflakeStatement.class).executeAsyncQuery(executeSql)
         this.status = TaskStatus.SUBMITTED
@@ -230,9 +228,7 @@ from specification
             container.resources.requests.memory = memory ? memory.toMega() + "Mi" : null
         }
 
-        final String mountsEnv = System.getenv("stageMounts")
-        final String mounts = mountsEnv != null ? mountsEnv : executor.snowflakeConfig.get("stageMounts")
-        StageMounts result = parseStageMounts(mounts)
+        StageMounts result = new StageMounts()
 
         final String workDir = executor.getWorkDir().toUriString()
 
@@ -246,14 +242,6 @@ from specification
             result.addWorkDirMount(mountPath, stageName)
 
             log.debug("Mounting Snowflake stage @${stageName} to ${mountPath}")
-        } else {
-            // Legacy behavior: use workDirStage config
-            final String workDirStageEnv = System.getenv("workDirStage")
-            final String workDirStage = workDirStageEnv != null ? workDirStageEnv :
-                executor.snowflakeConfig.get("workDirStage")
-            if (workDirStage) {
-                result.addWorkDirMount(workDir, String.format("%s/", workDirStage))
-            }
         }
 
         result.addLocalVolume(scratchDir)
@@ -303,30 +291,6 @@ from specification
             volumes.add(new Volume(volumeName, "local"))
         }
 
-    }
-    
-    private static StageMounts parseStageMounts(String input){
-        if (input == null) {
-            return new StageMounts()
-        }
-
-        final List<Volume> volumes = new ArrayList<>()
-        final List<VolumeMount> volumeMounts = new ArrayList<>()
-        String[] mounts = input.split(",")
-        for (int i=0; i<mounts.length; i++) {
-            String[] mountParts = mounts[i].split(":")
-            if (mountParts.length != 2) {
-                continue
-            }
-
-            final String volumeName = "volume" + i
-            volumeMounts.add(new VolumeMount(volumeName, mountParts[1]))
-
-            final Volume volume = new Volume(volumeName, new StageConfig("@"+mountParts[0], true))
-            volumes.add(volume)
-        }
-
-        return new StageMounts(volumeMounts, volumes)
     }
 
     private static String normalizeTaskName(String sessionRunName, TaskId taskId) {

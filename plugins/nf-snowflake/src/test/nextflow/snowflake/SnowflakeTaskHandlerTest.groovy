@@ -21,9 +21,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         def taskRun = createMockTaskRun([
             container: 'ubuntu:latest'
         ])
-        def executor = createMockExecutor([
-            workDirStage: 'work-stage'
-        ])
+        def executor = createMockExecutor([:])
         def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
@@ -43,7 +41,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         yamlSpec.contains('/bin/bash')
         yamlSpec.contains('volumeMounts:')
         yamlSpec.contains('volumes:')
-        yamlSpec.contains('mountPath: /work')
+        yamlSpec.contains('mountPath: /scratch')
     }
 
     def "buildJobServiceSpec should include CPU and memory resources when specified"() {
@@ -53,9 +51,7 @@ class SnowflakeTaskHandlerTest extends Specification {
             cpus: 4,
             memory: '8GB'
         ])
-        def executor = createMockExecutor([
-            workDirStage: 'work-stage'
-        ])
+        def executor = createMockExecutor([:])
         def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
@@ -84,9 +80,7 @@ class SnowflakeTaskHandlerTest extends Specification {
             container: 'ubuntu:latest',
             cpus: 2
         ])
-        def executor = createMockExecutor([
-            workDirStage: 'work-stage'
-        ])
+        def executor = createMockExecutor([:])
         def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
@@ -110,9 +104,7 @@ class SnowflakeTaskHandlerTest extends Specification {
             container: 'ubuntu:latest',
             memory: '4GB'
         ])
-        def executor = createMockExecutor([
-            workDirStage: 'work-stage'
-        ])
+        def executor = createMockExecutor([:])
         def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
@@ -136,9 +128,7 @@ class SnowflakeTaskHandlerTest extends Specification {
             container: 'ubuntu:latest'
             // No cpus or memory specified
         ])
-        def executor = createMockExecutor([
-            workDirStage: 'work-stage'
-        ])
+        def executor = createMockExecutor([:])
         def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
@@ -159,64 +149,6 @@ class SnowflakeTaskHandlerTest extends Specification {
         !yamlSpec.contains('memory:')
     }
 
-    def "buildJobServiceSpec should include stage mounts when configured"() {
-        given:
-        def taskRun = createMockTaskRun([
-            container: 'ubuntu:latest'
-        ])
-        def executor = createMockExecutor([
-            stageMounts: 'stage1:/mnt/data,stage2:/mnt/output',
-            workDirStage: 'work-stage'
-        ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
-
-        when:
-        def yamlSpec = handler.buildJobServiceSpec()
-
-        then:
-        yamlSpec != null
-        
-        // Should have multiple volume mounts (stage mounts + work dir mount)
-        yamlSpec.contains('volumeMounts:')
-        yamlSpec.contains('volumes:')
-        
-        // Check stage mount configurations
-        yamlSpec.contains('mountPath: /mnt/data')
-        yamlSpec.contains('mountPath: /mnt/output')
-        yamlSpec.contains('source: stage')
-        
-        // Work dir mount should still be present
-        yamlSpec.contains('mountPath: /work')
-    }
-
-    def "buildJobServiceSpec should handle invalid stage mounts gracefully"() {
-        given:
-        def taskRun = createMockTaskRun([
-            container: 'ubuntu:latest'
-        ])
-        def executor = createMockExecutor([
-            stageMounts: 'invalid-mount,stage1:/valid/mount,another-invalid',
-            workDirStage: 'work-stage'
-        ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
-
-        when:
-        def yamlSpec = handler.buildJobServiceSpec()
-
-        then:
-        yamlSpec != null
-        
-        // Should include only the valid mount
-        yamlSpec.contains('mountPath: /valid/mount')
-        yamlSpec.contains('source: stage')
-        
-        // Invalid mounts should not appear
-        !yamlSpec.contains('invalid-mount')
-        !yamlSpec.contains('another-invalid')
-        
-        // Work dir mount should still be present
-        yamlSpec.contains('mountPath: /work')
-    }
 
     def "buildJobServiceSpec should generate valid YAML structure for Snowflake Job Service"() {
         given:
@@ -225,10 +157,7 @@ class SnowflakeTaskHandlerTest extends Specification {
             cpus: 2,
             memory: '1GB'
         ])
-        def executor = createMockExecutor([
-            stageMounts: 'input-stage:/input',
-            workDirStage: 'work-stage'
-        ])
+        def executor = createMockExecutor([:])
         def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
@@ -256,7 +185,7 @@ class SnowflakeTaskHandlerTest extends Specification {
         yamlSpec.contains('volumeMounts:')
         yamlSpec.contains('mountPath:')
         yamlSpec.contains('volumes:')
-        yamlSpec.contains('source: stage')  // All sources should start with @
+        yamlSpec.contains('source: local')  // Scratch directory uses local volume
     }
 
     def "buildJobServiceSpec should normalize task names properly"() {
@@ -265,9 +194,7 @@ class SnowflakeTaskHandlerTest extends Specification {
             container: 'ubuntu:latest'
         ])
         taskRun.getName() >> 'test-task.with#special$chars'
-        def executor = createMockExecutor([
-            workDirStage: 'work-stage'
-        ])
+        def executor = createMockExecutor([:])
         def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when:
@@ -280,28 +207,6 @@ class SnowflakeTaskHandlerTest extends Specification {
         yamlSpec.contains('main')
     }
 
-    def "buildJobServiceSpec should handle null stage mounts"() {
-        given:
-        def taskRun = createMockTaskRun([
-            container: 'ubuntu:latest'
-        ])
-        def executor = createMockExecutor([
-            stageMounts: null,
-            workDirStage: 'work-stage'
-        ])
-        def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
-
-        when:
-        def yamlSpec = handler.buildJobServiceSpec()
-
-        then:
-        yamlSpec != null
-        
-        // Should only have work dir mount, no stage mounts
-        yamlSpec.contains('volumeMounts:')
-        yamlSpec.contains('mountPath: /work')
-        yamlSpec.contains('source: stage')
-    }
 
     def "generated YAML should be compatible with Snowflake Job Service specification"() {
         given: "A complex task configuration"
@@ -310,10 +215,7 @@ class SnowflakeTaskHandlerTest extends Specification {
             cpus: 8,
             memory: '16GB'
         ])
-        def executor = createMockExecutor([
-            stageMounts: 'data-stage:/data,results-stage:/results,reference-stage:/reference',
-            workDirStage: 'work-stage'
-        ])
+        def executor = createMockExecutor([:])
         def handler = new TestableSnowflakeTaskHandler(taskRun, executor)
 
         when: "Generating the job service specification"
@@ -341,16 +243,13 @@ class SnowflakeTaskHandlerTest extends Specification {
         yamlSpec.contains('cpu: 8')
         yamlSpec.contains('memory: 16384Mi')
         
-        and: "Volume mounts should include all stages plus work directory"
+        and: "Volume mounts should include scratch directory"
         yamlSpec.contains('volumeMounts:')
-        yamlSpec.contains('mountPath: /data')
-        yamlSpec.contains('mountPath: /results')
-        yamlSpec.contains('mountPath: /reference')
-        yamlSpec.contains('mountPath: /work')
-        
-        and: "Volume definitions should reference correct Snowflake stages"
+        yamlSpec.contains('mountPath: /scratch')
+
+        and: "Volume definitions should be present"
         yamlSpec.contains('volumes:')
-        yamlSpec.contains('source: stage')
+        yamlSpec.contains('source: local')
         
         when: "Validating the YAML can be used in a Snowflake SQL statement"
         def sqlTemplate = """
