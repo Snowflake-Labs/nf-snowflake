@@ -1,6 +1,0 @@
-Manifest-Version: 1.0
-Plugin-Id: nf-snowflake
-Plugin-Version: 1.0.0
-Plugin-Class: nextflow.snowflake.SnowflakePlugin
-Plugin-Provider: nextflow
-Plugin-Requires: >=24.01.0-edge
