@@ -34,7 +34,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build plugins
-        run: make buildPlugins
+        run: make assemble
 
       - name: Run tests
         run: make test
