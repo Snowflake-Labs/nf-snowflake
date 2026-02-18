@@ -15,6 +15,7 @@ import java.util.concurrent.locks.ReentrantLock
 import java.util.Queue
 import java.util.Map
 import net.snowflake.client.jdbc.SnowflakeConnection
+import nextflow.snowflake.config.SnowflakeConfig
 
 @Slf4j
 @CompileStatic
@@ -28,6 +29,9 @@ class SnowflakeConnectionPool {
     private final Map<String, PooledConnection> allConnections = new HashMap<>()
     private final ReentrantLock poolLock = new ReentrantLock()
 
+    // Configuration
+    private SnowflakeConfig config
+
     // Singleton instance
     private static final SnowflakeConnectionPool INSTANCE = new SnowflakeConnectionPool()
 
@@ -36,6 +40,13 @@ class SnowflakeConnectionPool {
     }
 
     private SnowflakeConnectionPool() {
+    }
+
+    /**
+     * Set the Snowflake configuration for connection creation
+     */
+    void setConfig(SnowflakeConfig config) {
+        this.config = config
     }
 
     public static SnowflakeConnectionPool getInstance() {
@@ -179,7 +190,15 @@ class SnowflakeConnectionPool {
                     properties)
         } else {
             // Fall back to connections.toml via jdbc:snowflake:auto
-            return DriverManager.getConnection("jdbc:snowflake:auto")
+            // Use connectionName from config if available
+            String jdbcUrl = "jdbc:snowflake:auto"
+            if (config?.connectionName) {
+                jdbcUrl = "jdbc:snowflake:auto?connectionName=${config.connectionName}"
+                log.debug("Using connection name from config: ${config.connectionName}")
+            } else {
+                log.debug("No connection name specified, using jdbc:snowflake:auto (will use default connection)")
+            }
+            return DriverManager.getConnection(jdbcUrl)
         }
     }
 

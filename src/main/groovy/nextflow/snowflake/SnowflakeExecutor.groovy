@@ -123,6 +123,9 @@ class SnowflakeExecutor extends Executor implements ExtensionPoint {
         final Map configMap = session.config.navigate("snowflake") as Map
         snowflakeConfig = new SnowflakeConfig(configMap ?: [:])
 
+        // Set config on connection pool for connection discovery
+        SnowflakeConnectionPool.getInstance().setConfig(snowflakeConfig)
+
         // Validate that workDir uses snowflake:// scheme
         validateWorkDir()
 

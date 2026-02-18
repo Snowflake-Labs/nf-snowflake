@@ -51,6 +51,16 @@ class SnowflakeConfig implements ConfigScope {
     ''')
     String registryMappings
 
+    @ConfigOption
+    @Description('''
+        The name of the connection to use from the connections.toml file.
+        When specified, the JDBC driver will use the connection configuration
+        defined under this name in the connections.toml file.
+
+        Example: `connectionName = 'aws-oauth-file'`
+    ''')
+    String connectionName
+
     /**
      * No-argument constructor required for configuration validation support.
      */
@@ -69,5 +79,6 @@ class SnowflakeConfig implements ConfigScope {
 
         this.computePool = opts.computePool as String
         this.registryMappings = opts.registryMappings as String
+        this.connectionName = opts.connectionName as String
     }
 }
